@@ -1,0 +1,52 @@
+HELP.md
+target/
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+
+# Local environment secrets and uploaded files
+.env
+.env.*
+backend.env
+*.env
+uploads/
+
+# Frontend environment file
+lost-found-frontend/front.env
+lost-found-frontend/node_modules/
+lost-found-frontend/dist/
+
+# Local Spring Boot credentials
+src/main/resources/application.properties
+lost-found-frontend/front.env
+lost-found-frontend/node_modules/
+lost-found-frontend/dist/
+*.sql
