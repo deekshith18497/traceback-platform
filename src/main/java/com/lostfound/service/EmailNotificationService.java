@@ -8,6 +8,7 @@ import com.lostfound.entity.User;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
@@ -17,8 +18,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class EmailNotificationService {
 
-    private static final Logger log =
-            LoggerFactory.getLogger(EmailNotificationService.class);
+    private static final Logger log = LoggerFactory.getLogger(EmailNotificationService.class);
 
     private final JavaMailSender mailSender;
 
@@ -28,8 +28,9 @@ public class EmailNotificationService {
     @Value("${spring.mail.username:}")
     private String fromAddress;
 
-    public EmailNotificationService(JavaMailSender mailSender) {
-        this.mailSender = mailSender;
+    public EmailNotificationService(
+            ObjectProvider<JavaMailSender> mailSenderProvider) {
+        this.mailSender = mailSenderProvider.getIfAvailable();
     }
 
     public void notifyPotentialMatch(User user, Match match) {
@@ -49,12 +50,12 @@ public class EmailNotificationService {
                 Found item: %s
                 Similarity score: %s
 
-                Please log in to Lost & Found Matcher to review it.
+                Please log in to TraceBack to review it.
                 Do not share passwords or OTPs by email.
                 """.formatted(
                 safe(user.getName()),
-                safe(lost.getTitle()),
-                safe(found.getTitle()),
+                safe(lost == null ? null : lost.getTitle()),
+                safe(found == null ? null : found.getTitle()),
                 match.getSimilarityScore() == null
                         ? "N/A"
                         : match.getSimilarityScore() + "%");
@@ -81,19 +82,23 @@ public class EmailNotificationService {
                 Please coordinate responsibly to arrange the return.
                 Do not share passwords or OTPs.
 
-                Lost & Found Matcher
+                TraceBack
                 """.formatted(
-                safe(lost.getTitle()),
-                safe(found.getTitle()));
+                safe(lost == null ? null : lost.getTitle()),
+                safe(found == null ? null : found.getTitle()));
 
-        String lostEmail = lost.getUser().getEmail();
-        String foundEmail = found.getUser().getEmail();
+        String lostEmail = lost != null && lost.getUser() != null
+                ? lost.getUser().getEmail()
+                : null;
+        String foundEmail = found != null && found.getUser() != null
+                ? found.getUser().getEmail()
+                : null;
 
         send(lostEmail, "Lost & Found match confirmed", body);
 
         if (foundEmail != null
                 && (lostEmail == null
-                || !foundEmail.equalsIgnoreCase(lostEmail))) {
+                        || !foundEmail.equalsIgnoreCase(lostEmail))) {
             send(foundEmail, "Lost & Found match confirmed", body);
         }
     }
@@ -101,6 +106,11 @@ public class EmailNotificationService {
     private void send(String to, String subject, String body) {
         if (!enabled) {
             log.debug("Email notifications disabled");
+            return;
+        }
+
+        if (mailSender == null) {
+            log.warn("Email skipped: JavaMailSender is not configured");
             return;
         }
 
@@ -119,12 +129,14 @@ public class EmailNotificationService {
 
             mailSender.send(message);
         } catch (MailException exception) {
-            log.error("Unable to send notification email", exception);
+            log.error("Unable to send notification email: {}",
+                    exception.getMessage());
         }
     }
 
     private String safe(String value) {
         return value == null || value.isBlank()
-                ? "Not provided" : value;
+                ? "Not provided"
+                : value;
     }
 }
