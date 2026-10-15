@@ -7,6 +7,7 @@ import com.lostfound.security.RateLimitingFilter;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -45,20 +46,24 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/auth/**",
+                                "/api-docs",
                                 "/api-docs/**",
+                                "/v3/api-docs",
+                                "/v3/api-docs/**",
+                                "/swagger-ui",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/error")
                         .permitAll()
                         .requestMatchers(
-                                org.springframework.http.HttpMethod.GET,
+                                HttpMethod.GET,
                                 "/api/lost-items/my",
                                 "/api/found-items/my",
                                 "/api/matches/**",
                                 "/api/verifications/**")
                         .authenticated()
                         .requestMatchers(
-                                org.springframework.http.HttpMethod.GET,
+                                HttpMethod.GET,
                                 "/api/categories/**",
                                 "/api/lost-items",
                                 "/api/lost-items/search/**",
@@ -83,8 +88,6 @@ public class SecurityConfig {
         return http.build();
     }
 
-    // Keep the rate limiter in Spring Security's filter chain,
-    // but prevent a second servlet-container registration.
     @Bean
     public FilterRegistrationBean<RateLimitingFilter>
             rateLimitingFilterRegistration(
