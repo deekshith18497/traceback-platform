@@ -35,9 +35,8 @@ public class InboxService {
 
     @Transactional
     public ConversationResponse startConversation(
-            String email, StartConversationRequest request) {
-
-        User currentUser = getUser(email);
+            String identifier, StartConversationRequest request) {
+        User currentUser = getUser(identifier);
         String itemType = request.getItemType().trim().toUpperCase();
 
         User owner;
@@ -102,8 +101,8 @@ public class InboxService {
     }
 
     @Transactional(readOnly = true)
-    public List<ConversationResponse> getInbox(String email) {
-        User currentUser = getUser(email);
+    public List<ConversationResponse> getInbox(String identifier) {
+        User currentUser = getUser(identifier);
 
         return conversationRepository
                 .findInboxForUser(currentUser.getId())
@@ -114,9 +113,8 @@ public class InboxService {
 
     @Transactional
     public List<MessageResponse> getMessages(
-            String email, Long conversationId) {
-
-        User currentUser = getUser(email);
+            String identifier, Long conversationId) {
+        User currentUser = getUser(identifier);
         InboxConversation conversation =
                 getAuthorizedConversation(conversationId, currentUser);
 
@@ -141,11 +139,10 @@ public class InboxService {
 
     @Transactional
     public MessageResponse sendMessage(
-            String email,
+            String identifier,
             Long conversationId,
             SendMessageRequest request) {
-
-        User currentUser = getUser(email);
+        User currentUser = getUser(identifier);
 
         InboxConversation conversation =
                 getAuthorizedConversation(conversationId, currentUser);
@@ -160,10 +157,8 @@ public class InboxService {
             InboxConversation conversation,
             User sender,
             String content) {
-
         if (content == null || content.isBlank()) {
-            throw new IllegalArgumentException(
-                    "Message cannot be empty");
+            throw new IllegalArgumentException("Message cannot be empty");
         }
 
         if (content.trim().length() > 2000) {
@@ -178,7 +173,6 @@ public class InboxService {
 
         InboxMessage saved = messageRepository.save(message);
 
-        // Update conversation ordering for the inbox list.
         conversation.setUpdatedAt(LocalDateTime.now());
         conversationRepository.save(conversation);
 
@@ -187,12 +181,11 @@ public class InboxService {
 
     private InboxConversation getAuthorizedConversation(
             Long conversationId, User currentUser) {
-
         InboxConversation conversation =
                 conversationRepository.findById(conversationId)
-                .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "Conversation not found"));
+                        .orElseThrow(() ->
+                                new IllegalArgumentException(
+                                        "Conversation not found"));
 
         Long userId = currentUser.getId();
 
@@ -208,16 +201,18 @@ public class InboxService {
         return conversation;
     }
 
-    private User getUser(String email) {
-        return userRepository.findByEmail(
-                        email.trim().toLowerCase())
+    private User getUser(String identifier) {
+        if (identifier == null || identifier.isBlank()) {
+            throw new IllegalArgumentException("User identifier is required");
+        }
+
+        return userRepository.findByLoginIdentifier(identifier.trim())
                 .orElseThrow(() ->
                         new IllegalArgumentException("User not found"));
     }
 
     private ConversationResponse toConversationResponse(
             InboxConversation conversation, User currentUser) {
-
         ConversationResponse response = new ConversationResponse();
 
         User otherUser =

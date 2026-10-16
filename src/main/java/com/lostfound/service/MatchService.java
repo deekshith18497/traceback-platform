@@ -36,7 +36,6 @@ public class MatchService {
             FoundItemRepository foundItemRepository,
             UserRepository userRepository,
             MatchingEngine matchingEngine) {
-
         this.emailNotificationService = emailNotificationService;
         this.matchRepository = matchRepository;
         this.lostItemRepository = lostItemRepository;
@@ -46,8 +45,8 @@ public class MatchService {
     }
 
     @Transactional
-    public void confirmMatch(String email, Long matchId) {
-        User user = getUser(email);
+    public void confirmMatch(String identifier, Long matchId) {
+        User user = getUser(identifier);
 
         Match match = matchRepository.findById(matchId)
                 .orElseThrow(() ->
@@ -119,140 +118,24 @@ public class MatchService {
     }
 
     @Transactional
-public List<MatchResponse> findMatchesForFoundItem(Long foundItemId) {
-
-    FoundItem foundItem = foundItemRepository.findById(foundItemId)
-            .orElseThrow(() ->
-                    new IllegalArgumentException("Found item not found"));
-
-    if (!"ACTIVE".equalsIgnoreCase(foundItem.getStatus())) {
-        return List.of();
-    }
-
-    List<LostItem> lostItems =
-            lostItemRepository
-                    .findByStatusIgnoreCaseOrderByCreatedAtDesc("ACTIVE");
-
-    List<MatchResponse> responses = new ArrayList<>();
-
-    for (LostItem lostItem : lostItems) {
-
-        // Do not match reports created by the same user.
-        if (lostItem.getUser().getId()
-                .equals(foundItem.getUser().getId())) {
-            continue;
-        }
-
-        double score = matchingEngine.calculateSimilarity(
-                lostItem, foundItem);
-
-        if (score < 30) {
-            continue;
-        }
-
-        Match match = matchRepository
-                .findByLostItemIdAndFoundItemId(
-                        lostItem.getId(), foundItem.getId())
-                .orElseGet(Match::new);
-
-        boolean isNew = match.getId() == null;
-
-        if (!isNew && (
-                "DISMISSED".equalsIgnoreCase(match.getStatus())
-                || "CONFIRMED".equalsIgnoreCase(match.getStatus()))) {
-            continue;
-        }
-
-        match.setLostItem(lostItem);
-        match.setFoundItem(foundItem);
-        match.setSimilarityScore(score);
-        match.setMatchReason(
-                matchingEngine.explainMatch(lostItem, foundItem));
-
-        if (isNew) {
-            match.setStatus("PENDING");
-        }
-
-        Match savedMatch = matchRepository.save(match);
-
-        if (isNew) {
-            emailNotificationService.notifyPotentialMatch(
-                    lostItem.getUser(), savedMatch);
-
-            emailNotificationService.notifyPotentialMatch(
-                    foundItem.getUser(), savedMatch);
-        }
-
-        responses.add(toResponse(savedMatch));
-    }
-
-    responses.sort((a, b) ->
-            Double.compare(
-                    b.getSimilarityScore(),
-                    a.getSimilarityScore()));
-
-    return responses;
-}
-
-    @Transactional
-    public void dismissMatch(String email, Long matchId) {
-        User user = getUser(email);
-
-        Match match = matchRepository.findById(matchId)
+    public List<MatchResponse> findMatchesForFoundItem(Long foundItemId) {
+        FoundItem foundItem = foundItemRepository.findById(foundItemId)
                 .orElseThrow(() ->
-                        new IllegalArgumentException("Match not found"));
+                        new IllegalArgumentException("Found item not found"));
 
-        boolean lostOwner =
-                match.getLostItem().getUser().getId().equals(user.getId());
-        boolean foundOwner =
-                match.getFoundItem().getUser().getId().equals(user.getId());
-
-        if (!lostOwner && !foundOwner) {
-            throw new AccessDeniedException(
-                    "You cannot dismiss another user's match");
+        if (!"ACTIVE".equalsIgnoreCase(foundItem.getStatus())) {
+            return List.of();
         }
 
-        if ("CONFIRMED".equalsIgnoreCase(match.getStatus())) {
-            throw new IllegalArgumentException(
-                    "A confirmed match cannot be dismissed");
-        }
-
-        if ("DISMISSED".equalsIgnoreCase(match.getStatus())) {
-            throw new IllegalArgumentException("Match is already dismissed");
-        }
-
-        match.setStatus("DISMISSED");
-        matchRepository.save(match);
-    }
-
-    @Transactional
-    public List<MatchResponse> findMatchesForLostItem(
-            String email, Long lostItemId) {
-
-        User user = getUser(email);
-
-        LostItem lostItem = lostItemRepository.findById(lostItemId)
-                .orElseThrow(() ->
-                        new IllegalArgumentException("Lost item not found"));
-
-        if (!lostItem.getUser().getId().equals(user.getId())) {
-            throw new AccessDeniedException(
-                    "You can request matches only for your own lost items");
-        }
-
-        if (!"ACTIVE".equalsIgnoreCase(lostItem.getStatus())) {
-            throw new IllegalArgumentException(
-                    "Only active lost items can be matched");
-        }
-
-        List<FoundItem> candidates =
-                foundItemRepository
+        List<LostItem> lostItems =
+                lostItemRepository
                         .findByStatusIgnoreCaseOrderByCreatedAtDesc("ACTIVE");
 
         List<MatchResponse> responses = new ArrayList<>();
 
-        for (FoundItem foundItem : candidates) {
-            if (foundItem.getUser().getId().equals(user.getId())) {
+        for (LostItem lostItem : lostItems) {
+            if (lostItem.getUser().getId()
+                    .equals(foundItem.getUser().getId())) {
                 continue;
             }
 
@@ -270,14 +153,9 @@ public List<MatchResponse> findMatchesForFoundItem(Long foundItemId) {
 
             boolean isNew = match.getId() == null;
 
-            if (!isNew) {
-                if ("DISMISSED".equalsIgnoreCase(match.getStatus())
-                        || "CONFIRMED".equalsIgnoreCase(match.getStatus())) {
-                    continue;
-                }
-            }
-
-            if (!"ACTIVE".equalsIgnoreCase(foundItem.getStatus())) {
+            if (!isNew && (
+                    "DISMISSED".equalsIgnoreCase(match.getStatus())
+                    || "CONFIRMED".equalsIgnoreCase(match.getStatus()))) {
                 continue;
             }
 
@@ -311,15 +189,128 @@ public List<MatchResponse> findMatchesForFoundItem(Long foundItemId) {
         return responses;
     }
 
-    public List<MatchResponse> getMyMatches(String email) {
-        User user = getUser(email);
+    @Transactional
+    public void dismissMatch(String identifier, Long matchId) {
+        User user = getUser(identifier);
+
+        Match match = matchRepository.findById(matchId)
+                .orElseThrow(() ->
+                        new IllegalArgumentException("Match not found"));
+
+        boolean lostOwner =
+                match.getLostItem().getUser().getId().equals(user.getId());
+        boolean foundOwner =
+                match.getFoundItem().getUser().getId().equals(user.getId());
+
+        if (!lostOwner && !foundOwner) {
+            throw new AccessDeniedException(
+                    "You cannot dismiss another user's match");
+        }
+
+        if ("CONFIRMED".equalsIgnoreCase(match.getStatus())) {
+            throw new IllegalArgumentException(
+                    "A confirmed match cannot be dismissed");
+        }
+
+        if ("DISMISSED".equalsIgnoreCase(match.getStatus())) {
+            throw new IllegalArgumentException("Match is already dismissed");
+        }
+
+        match.setStatus("DISMISSED");
+        matchRepository.save(match);
+    }
+
+    @Transactional
+    public List<MatchResponse> findMatchesForLostItem(
+            String identifier, Long lostItemId) {
+        User user = getUser(identifier);
+
+        LostItem lostItem = lostItemRepository.findById(lostItemId)
+                .orElseThrow(() ->
+                        new IllegalArgumentException("Lost item not found"));
+
+        if (!lostItem.getUser().getId().equals(user.getId())) {
+            throw new AccessDeniedException(
+                    "You can request matches only for your own lost items");
+        }
+
+        if (!"ACTIVE".equalsIgnoreCase(lostItem.getStatus())) {
+            throw new IllegalArgumentException(
+                    "Only active lost items can be matched");
+        }
+
+        List<FoundItem> candidates =
+                foundItemRepository
+                        .findByStatusIgnoreCaseOrderByCreatedAtDesc("ACTIVE");
+
+        List<MatchResponse> responses = new ArrayList<>();
+
+        for (FoundItem foundItem : candidates) {
+            if (foundItem.getUser().getId().equals(user.getId())) {
+                continue;
+            }
+
+            if (!"ACTIVE".equalsIgnoreCase(foundItem.getStatus())) {
+                continue;
+            }
+
+            double score = matchingEngine.calculateSimilarity(
+                    lostItem, foundItem);
+
+            if (score < 30) {
+                continue;
+            }
+
+            Match match = matchRepository
+                    .findByLostItemIdAndFoundItemId(
+                            lostItem.getId(), foundItem.getId())
+                    .orElseGet(Match::new);
+
+            boolean isNew = match.getId() == null;
+
+            if (!isNew && (
+                    "DISMISSED".equalsIgnoreCase(match.getStatus())
+                    || "CONFIRMED".equalsIgnoreCase(match.getStatus()))) {
+                continue;
+            }
+
+            match.setLostItem(lostItem);
+            match.setFoundItem(foundItem);
+            match.setSimilarityScore(score);
+            match.setMatchReason(
+                    matchingEngine.explainMatch(lostItem, foundItem));
+
+            if (isNew) {
+                match.setStatus("PENDING");
+            }
+
+            Match savedMatch = matchRepository.save(match);
+
+            if (isNew) {
+                emailNotificationService.notifyPotentialMatch(
+                        lostItem.getUser(), savedMatch);
+                emailNotificationService.notifyPotentialMatch(
+                        foundItem.getUser(), savedMatch);
+            }
+
+            responses.add(toResponse(savedMatch));
+        }
+
+        responses.sort((a, b) ->
+                Double.compare(
+                        b.getSimilarityScore(),
+                        a.getSimilarityScore()));
+
+        return responses;
+    }
+
+    public List<MatchResponse> getMyMatches(String identifier) {
+        User user = getUser(identifier);
 
         List<Match> matches = new ArrayList<>();
-
         matches.addAll(
                 matchRepository.findByLostItemUserIdOrderByCreatedAtDesc(
                         user.getId()));
-
         matches.addAll(
                 matchRepository.findByFoundItemUserIdOrderByCreatedAtDesc(
                         user.getId()));
@@ -330,16 +321,18 @@ public List<MatchResponse> findMatchesForFoundItem(Long foundItemId) {
                 .toList();
     }
 
-    private User getUser(String email) {
-        return userRepository
-                .findByEmail(email.trim().toLowerCase())
+    private User getUser(String identifier) {
+        if (identifier == null || identifier.isBlank()) {
+            throw new IllegalArgumentException("User identifier is required");
+        }
+
+        return userRepository.findByLoginIdentifier(identifier.trim())
                 .orElseThrow(() ->
                         new IllegalArgumentException("User not found"));
     }
 
     private MatchResponse toResponse(Match match) {
         MatchResponse response = new MatchResponse();
-
         response.setId(match.getId());
         response.setLostItemId(match.getLostItem().getId());
         response.setLostItemTitle(match.getLostItem().getTitle());
@@ -349,7 +342,6 @@ public List<MatchResponse> findMatchesForFoundItem(Long foundItemId) {
         response.setMatchReason(match.getMatchReason());
         response.setStatus(match.getStatus());
         response.setCreatedAt(match.getCreatedAt());
-
         return response;
     }
 }

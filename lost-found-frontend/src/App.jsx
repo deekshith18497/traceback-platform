@@ -4,6 +4,11 @@ import "./App.css";
 import CommunityAnalytics from "./CommunityAnalytics.jsx";
 import {
   authenticate,
+  requestRegistrationOtp,
+  verifyRegistrationOtp,
+  requestPasswordResetOtp,
+  verifyPasswordResetOtp,
+  resetPassword,
   getApiBaseUrl,
   getCategories,
   getItems,
@@ -59,9 +64,9 @@ function Brand() {
     <a className="brand" href="#home">
       <span className="brand-mark">✦</span>
       <span>
-        Trace<span className="brand-red">Back</span>
+        HERO<span className="brand-red">FIND</span>
       </span>
-      <small>LOST &amp; FOUND PLATFORM</small>
+      <small>LOST &amp; FOUND INITIATIVE</small>
     </a>
   );
 }
@@ -99,6 +104,16 @@ export default function App() {
 
   const [modal, setModal] = useState("");
   const [authMode, setAuthMode] = useState("login");
+  const [authChannel, setAuthChannel] = useState("EMAIL");
+  const [authOtp, setAuthOtp] = useState("");
+  const [recovery, setRecovery] = useState({
+    channel: "EMAIL",
+    identifier: "",
+    otp: "",
+    resetToken: "",
+    newPassword: "",
+  });
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
 
   const [authForm, setAuthForm] = useState({
     name: "",
@@ -623,90 +638,225 @@ export default function App() {
     }));
   }
 
+  function completeSignIn(result, messagePrefix = "Welcome") {
+    if (!result?.token) {
+      throw new Error("The server did not return a sign-in token.");
+    }
+
+    localStorage.setItem("lfm_token", result.token);
+
+    const safeUser = {
+      id: result.userId,
+      name: result.name,
+      email: result.email,
+      phone: result.phone,
+      role: result.role,
+    };
+
+    localStorage.setItem("lfm_user", JSON.stringify(safeUser));
+    setUser(safeUser);
+    setModal("");
+    setAuthForm({ name: "", email: "", phone: "", password: "" });
+    setAuthOtp("");
+    setNotice(
+      `${messagePrefix}${result.name ? `, ${result.name}` : ""}! You are signed in.`
+    );
+    void loadMatches();
+    void loadInbox();
+    void loadWatchlist();
+  }
+
   async function handleAuth(event) {
     event.preventDefault();
-
     if (authBusy) return;
-
     setError("");
     setNotice("");
 
-    if (authMode === "register") {
-      if (authForm.name.trim().length < 3) {
-        setError(
-          "Full name must contain at least 3 characters."
-        );
-        return;
-      }
+    if (authMode !== "login") return;
 
-      if (!strongPassword) {
-        setError(
-          "Please create a strong password using all five requirements."
-        );
-        return;
-      }
+    setAuthBusy(true);
+    try {
+      const result = await authenticate("login", {
+        // Backend keeps the historical `email` property for email or mobile login.
+        email: authForm.email.trim(),
+        password: authForm.password,
+      });
+      completeSignIn(result);
+    } catch (err) {
+      setError(err.message || "Sign in failed. Please try again.");
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function handleRegistrationRequest(event) {
+    event.preventDefault();
+    if (authBusy) return;
+    setError("");
+    setNotice("");
+
+    if (authForm.name.trim().length < 3) {
+      setError("Full name must contain at least 3 characters.");
+      return;
+    }
+    if (!strongPassword) {
+      setError("Please create a strong password using all five requirements.");
+      return;
+    }
+    if (authChannel === "EMAIL" && !authForm.email.trim()) {
+      setError("Enter your email address to receive the OTP.");
+      return;
+    }
+    if (authChannel === "MOBILE" && !authForm.phone.trim()) {
+      setError("Enter your mobile number to receive the OTP.");
+      return;
     }
 
     setAuthBusy(true);
-
     try {
-      const result = await authenticate(
-        authMode,
-        authMode === "register"
-          ? {
-            name: authForm.name.trim(),
-            email: authForm.email.trim(),
-            phone: authForm.phone.trim(),
-            password: authForm.password,
-          }
-          : {
-            email: authForm.email.trim(),
-            password: authForm.password,
-          }
-      );
-
-      if (!result?.token) {
-        throw new Error(
-          "The server did not return a sign-in token."
-        );
-      }
-
-      localStorage.setItem("lfm_token", result.token);
-
-      const safeUser = {
-        id: result.userId,
-        name: result.name,
-        email: result.email,
-        role: result.role,
+      const payload = {
+        channel: authChannel,
+        name: authForm.name.trim(),
+        password: authForm.password,
+        ...(authChannel === "EMAIL"
+          ? { email: authForm.email.trim() }
+          : { phone: authForm.phone.trim() }),
       };
-
-      localStorage.setItem(
-        "lfm_user",
-        JSON.stringify(safeUser)
-      );
-
-      setUser(safeUser);
-      setModal("");
-
-      setAuthForm({
-        name: "",
-        email: "",
-        phone: "",
-        password: "",
-      });
-
-      setNotice(
-        `Welcome${result.name ? `, ${result.name}` : ""
-        }! You are signed in.`
-      );
-
-      await loadMatches();
+      const result = await requestRegistrationOtp(payload);
+      setAuthOtp("");
+      setAuthMode("register-verify");
+      setNotice(result?.message || "OTP requested. Check your configured delivery channel.");
     } catch (err) {
-      setError(
-        err.message || "Authentication failed. Please try again."
-      );
+      setError(err.message || "Unable to request a registration OTP.");
     } finally {
       setAuthBusy(false);
+    }
+  }
+
+  async function handleRegistrationVerify(event) {
+    event.preventDefault();
+    if (authBusy) return;
+    setError("");
+    setNotice("");
+
+    if (!authOtp.trim()) {
+      setError("Enter the OTP you received.");
+      return;
+    }
+
+    setAuthBusy(true);
+    try {
+      const identifier = authChannel === "EMAIL"
+        ? authForm.email.trim()
+        : authForm.phone.trim();
+      const result = await verifyRegistrationOtp({
+        channel: authChannel,
+        identifier,
+        otp: authOtp.trim(),
+      });
+      completeSignIn(result, "Account created. Welcome");
+    } catch (err) {
+      setError(err.message || "OTP verification failed.");
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function handleForgotRequest(event) {
+    event.preventDefault();
+    if (recoveryBusy) return;
+    setError("");
+    setNotice("");
+
+    if (!recovery.identifier.trim()) {
+      setError("Enter your registered email or mobile number.");
+      return;
+    }
+
+    setRecoveryBusy(true);
+    try {
+      const result = await requestPasswordResetOtp({
+        channel: recovery.channel,
+        identifier: recovery.identifier.trim(),
+      });
+      setRecovery((prev) => ({ ...prev, otp: "", resetToken: "", newPassword: "" }));
+      setAuthMode("forgot-verify");
+      setNotice(result?.message || "OTP request processed. Check your configured delivery channel.");
+    } catch (err) {
+      setError(err.message || "Unable to request a password reset OTP.");
+    } finally {
+      setRecoveryBusy(false);
+    }
+  }
+
+  async function handleForgotVerify(event) {
+    event.preventDefault();
+    if (recoveryBusy) return;
+    setError("");
+    setNotice("");
+
+    if (!recovery.otp.trim()) {
+      setError("Enter the OTP you received.");
+      return;
+    }
+
+    setRecoveryBusy(true);
+    try {
+      const result = await verifyPasswordResetOtp({
+        channel: recovery.channel,
+        identifier: recovery.identifier.trim(),
+        otp: recovery.otp.trim(),
+      });
+      if (!result?.resetToken) {
+        throw new Error("The server did not return a password reset token.");
+      }
+      setRecovery((prev) => ({ ...prev, resetToken: result.resetToken, otp: "", newPassword: "" }));
+      setAuthMode("reset");
+      setNotice("OTP verified. Create your new password.");
+    } catch (err) {
+      setError(err.message || "OTP verification failed.");
+    } finally {
+      setRecoveryBusy(false);
+    }
+  }
+
+  const recoveryPasswordChecks = [
+    recovery.newPassword.length >= 8,
+    /[A-Z]/.test(recovery.newPassword),
+    /[a-z]/.test(recovery.newPassword),
+    /[0-9]/.test(recovery.newPassword),
+    /[^A-Za-z0-9]/.test(recovery.newPassword),
+  ];
+  const strongRecoveryPassword = recoveryPasswordChecks.every(Boolean);
+
+  async function handleForgotReset(event) {
+    event.preventDefault();
+    if (recoveryBusy) return;
+    setError("");
+    setNotice("");
+
+    if (!strongRecoveryPassword) {
+      setError("Use 8+ characters with uppercase, lowercase, a number, and a special character.");
+      return;
+    }
+
+    setRecoveryBusy(true);
+    try {
+      const result = await resetPassword({
+        channel: recovery.channel,
+        identifier: recovery.identifier.trim(),
+        resetToken: recovery.resetToken,
+        newPassword: recovery.newPassword,
+      });
+      setRecovery({ channel: "EMAIL", identifier: "", otp: "", resetToken: "", newPassword: "" });
+      setAuthForm({ name: "", email: "", phone: "", password: "" });
+      setAuthMode("login");
+      setModal("");
+      setNotice(result?.message || "Password reset successful. Select Sign in and use your new password.");
+    } catch (err) {
+      setError(err.message || "Unable to reset your password.");
+    } finally {
+      setRecoveryBusy(false);
     }
   }
 
@@ -971,8 +1121,8 @@ export default function App() {
   return (
     <div className="app-shell marvel-shell" id="home">
       <div className="top-strip">
-        A COMMUNITY THAT HELPS BRING LOST ITEMS HOME <span>•</span>{" "}
-        COMMUNITY-POWERED RECOVERY
+        EARTH'S MISSING ITEMS NEED A HERO <span>•</span>{" "}
+        COMMUNITY RECOVERY NETWORK
       </div>
 
       <header className="topbar">
@@ -980,8 +1130,8 @@ export default function App() {
 
 
         <nav className="nav-links">
-          <a href="#home">DASHBOARD</a>
-          <a href="#items">REPORTS</a>
+          <a href="#home">HQ</a>
+          <a href="#items">CASE FILES</a>
           <a href="#my-matches">MY MATCHES</a>
           <a href="#inbox">INBOX</a>
           <a href="#how-it-works">HOW IT WORKS</a>
@@ -992,7 +1142,7 @@ export default function App() {
           {user ? (
             <>
               <span className="signed-in">
-                WELCOME, {user.name?.split(" ")[0]?.toUpperCase()}
+                AGENT {user.name?.split(" ")[0]?.toUpperCase()}
               </span>
 
               <button
@@ -1032,17 +1182,20 @@ export default function App() {
         <section className="hero marvel-hero">
           <div className="hero-copy">
             <div className="eyebrow">
-              <span className="live-dot" /> COMMUNITY LOST &amp; FOUND PLATFORM
+              <span className="live-dot" /> THE LOST &amp; FOUND
+              INITIATIVE
             </div>
 
             <h1>
-              LOST SOMETHING?
+              NOT ALL HEROES
               <br />
-              <span>LET’S BRING IT BACK.</span>
+              <span>WEAR CAPES.</span>
             </h1>
 
             <p>
-              Report missing belongings, discover potential matches, and reconnect items with the people who need them.
+              Sometimes, a hero is the person who finds a missing
+              phone, returns a lost bag, or helps a stranger get
+              something important back.
             </p>
 
             <div className="hero-actions">
@@ -1051,7 +1204,7 @@ export default function App() {
                 className="button button-primary"
                 onClick={() => openReport("lost")}
               >
-                REPORT A LOST ITEM <span>→</span>
+                REPORT LOST ITEM <span>→</span>
               </button>
 
               <button
@@ -1059,22 +1212,23 @@ export default function App() {
                 className="button button-light"
                 onClick={() => openReport("found")}
               >
-                REPORT A FOUND ITEM
+                I FOUND SOMETHING
               </button>
             </div>
 
             <div className="hero-note">
-              <span>✦</span> Clear reports. Helpful matches. Real community impact.
+              <span>✦</span> Every report opens a new case. Every
+              match can change a day.
             </div>
           </div>
 
           <div className="hero-art marvel-art" aria-hidden="true">
             <div className="hero-emblem">
-              T<span>B</span>
+              H<span>F</span>
             </div>
 
             <div className="hero-art-caption">
-              COMMUNITY-POWERED
+              FRIENDLY NEIGHBORHOOD
               <br />
               ITEM RECOVERY
             </div>
@@ -1087,17 +1241,14 @@ export default function App() {
           </div>
         </section>
 
-        <section className="community-analytics-wrap" aria-label="Community analytics">
+        <section className="stats-row">
           <CommunityAnalytics
             lostItems={lostItems}
             foundItems={foundItems}
             allItems={allItems}
             onRefresh={loadItems}
           />
-        </section>
-
-        <section className="stats-row">
-<div className="stat-card">
+          <div className="stat-card">
             <span className="stat-icon lost-icon">⌕</span>
             <div>
               <strong>{lostItems.length}</strong>
@@ -1500,7 +1651,7 @@ export default function App() {
               className="button button-outline"
               onClick={() => openReport("found")}
             >
-              + REPORT A FOUND ITEM
+              + I FOUND SOMETHING
             </button>
           </div>
 
@@ -1818,7 +1969,7 @@ export default function App() {
         <section className="how-section" id="how-it-works">
           <div className="section-heading centered">
             <div>
-              <div className="eyebrow">A SIMPLE PROCESS</div>
+              <div className="eyebrow">THE HERO PROTOCOL</div>
               <h2>THREE STEPS. ONE GOOD DEED.</h2>
               <p>
                 Great power includes helping people find their things.
@@ -1862,7 +2013,7 @@ export default function App() {
 
       <footer className="footer">
         <Brand />
-        <p>Together, we make it easier to recover what matters.</p>
+        <p>With great community comes great responsibility.</p>
         <span>
           UNOFFICIAL FAN-INSPIRED DESIGN • NOT AFFILIATED WITH MARVEL
         </span>
@@ -1873,7 +2024,7 @@ export default function App() {
         <div
           className="modal-backdrop"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !authBusy) {
+            if (event.target === event.currentTarget && !authBusy && !recoveryBusy) {
               setModal("");
               setError("");
             }
@@ -1887,11 +2038,14 @@ export default function App() {
           >
             <div className="modal-heading">
               <div>
-                <div className="eyebrow">ACCOUNT ACCESS</div>
+                <div className="eyebrow">AGENT ACCESS</div>
                 <h2 id="auth-title">
-                  {authMode === "login"
-                    ? "WELCOME BACK, HERO"
-                    : "JOIN THE INITIATIVE"}
+                  {authMode === "login" ? "WELCOME BACK, HERO"
+                    : authMode === "register" ? "JOIN THE INITIATIVE"
+                      : authMode === "register-verify" ? "VERIFY YOUR ACCOUNT"
+                        : authMode === "forgot" ? "PASSWORD RECOVERY"
+                          : authMode === "forgot-verify" ? "VERIFY RECOVERY OTP"
+                            : "CREATE A NEW PASSWORD"}
                 </h2>
                 <p>
                   Your account protects ownership of your reports.
@@ -1901,7 +2055,7 @@ export default function App() {
               <button
                 type="button"
                 className="close-button"
-                disabled={authBusy}
+                disabled={authBusy || recoveryBusy}
                 onClick={() => {
                   setModal("");
                   setError("");
@@ -1918,185 +2072,196 @@ export default function App() {
               </div>
             )}
 
-            <div className="form-type-toggle">
-              <button
-                type="button"
-                className={authMode === "login" ? "selected" : ""}
-                onClick={() => {
-                  setAuthMode("login");
-                  setError("");
-                }}
-              >
-                SIGN IN
-              </button>
+            {(authMode === "login" || authMode === "register") && (
+              <div className="form-type-toggle">
+                <button
+                  type="button"
+                  className={authMode === "login" ? "selected" : ""}
+                  onClick={() => { setAuthMode("login"); setError(""); setNotice(""); }}
+                >
+                  SIGN IN
+                </button>
+                <button
+                  type="button"
+                  className={authMode === "register" ? "selected" : ""}
+                  onClick={() => { setAuthMode("register"); setError(""); setNotice(""); }}
+                >
+                  CREATE ACCOUNT
+                </button>
+              </div>
+            )}
 
-              <button
-                type="button"
-                className={authMode === "register" ? "selected" : ""}
-                onClick={() => {
-                  setAuthMode("register");
-                  setError("");
-                }}
-              >
-                CREATE ACCOUNT
-              </button>
-            </div>
-
-            <form className="report-form" onSubmit={handleAuth}>
-              {authMode === "register" && (
+            {authMode === "login" && (
+              <form className="report-form" onSubmit={handleAuth}>
                 <label>
-                  Full name *
+                  Email or mobile number *
                   <input
-                    name="name"
+                    name="email"
                     type="text"
-                    value={authForm.name}
+                    value={authForm.email}
                     onChange={updateAuth}
-                    minLength={3}
+                    required
+                    autoComplete="username"
+                    placeholder="Email address or mobile number"
+                  />
+                </label>
+                <label>
+                  Password *
+                  <input
+                    name="password"
+                    type="password"
+                    value={authForm.password}
+                    onChange={updateAuth}
+                    minLength={1}
                     maxLength={100}
                     required
-                    autoComplete="name"
-                    placeholder="Your full name"
+                    autoComplete="current-password"
+                    placeholder="Your password"
                   />
                 </label>
-              )}
+                <button
+                  type="button"
+                  className="button button-outline forgot-password-link"
+                  onClick={() => {
+                    setRecovery({
+                      channel: "EMAIL",
+                      identifier: authForm.email.includes("@") ? authForm.email.trim() : "",
+                      otp: "",
+                      resetToken: "",
+                      newPassword: "",
+                    });
+                    setAuthMode("forgot");
+                    setError("");
+                    setNotice("");
+                  }}
+                >
+                  Forgot Password?
+                </button>
+                <button type="submit" className="button button-primary submit-button" disabled={authBusy}>
+                  {authBusy ? "SIGNING IN..." : "SIGN IN →"}
+                </button>
+                <p className="privacy-note">Use a unique password. Your password is securely handled by the backend.</p>
+              </form>
+            )}
 
-              <label>
-                Email *
-                <input
-                  name="email"
-                  type="email"
-                  value={authForm.email}
-                  onChange={updateAuth}
-                  required
-                  autoComplete="email"
-                  placeholder="you@example.com"
-                />
-              </label>
-
-              {authMode === "register" && (
+            {authMode === "register" && (
+              <form className="report-form" onSubmit={handleRegistrationRequest}>
                 <label>
-                  Phone number (optional)
-                  <input
-                    name="phone"
-                    type="tel"
-                    value={authForm.phone}
-                    onChange={updateAuth}
-                    maxLength={20}
-                    autoComplete="tel"
-                    placeholder="Your phone number"
-                  />
+                  Full name *
+                  <input name="name" type="text" value={authForm.name} onChange={updateAuth} minLength={3} maxLength={100} required autoComplete="name" placeholder="Your full name" />
                 </label>
-              )}
-
-              {/* Only one password input in this form */}
-              <label>
-                Password *
-
-                <input
-                  name="password"
-                  type="password"
-                  value={authForm.password}
-                  onChange={updateAuth}
-                  minLength={authMode === "register" ? 8 : 1}
-                  maxLength={100}
-                  pattern={
-                    authMode === "register"
-                      ? "(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}"
-                      : undefined
-                  }
-                  title={
-                    authMode === "register"
-                      ? "Use at least 8 characters, uppercase, lowercase, a number, and a special character."
-                      : undefined
-                  }
-                  required
-                  autoComplete={
-                    authMode === "login"
-                      ? "current-password"
-                      : "new-password"
-                  }
-                  placeholder={
-                    authMode === "register"
-                      ? "Create a strong password"
-                      : "Your password"
-                  }
-                />
-
-                {authMode === "register" && (
+                <label>
+                  OTP delivery method
+                  <select value={authChannel} onChange={(event) => setAuthChannel(event.target.value)}>
+                    <option value="EMAIL">Email OTP</option>
+                    <option value="MOBILE">SMS OTP</option>
+                  </select>
+                </label>
+                {authChannel === "EMAIL" ? (
+                  <label>
+                    Email *
+                    <input name="email" type="email" value={authForm.email} onChange={updateAuth} required autoComplete="email" placeholder="you@example.com" />
+                  </label>
+                ) : (
+                  <label>
+                    Mobile number *
+                    <input name="phone" type="tel" value={authForm.phone} onChange={updateAuth} maxLength={20} required autoComplete="tel" placeholder="10-digit mobile number" />
+                  </label>
+                )}
+                <label>
+                  Password *
+                  <input name="password" type="password" value={authForm.password} onChange={updateAuth} minLength={8} maxLength={100} pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}" title="Use at least 8 characters, uppercase, lowercase, a number, and a special character." required autoComplete="new-password" placeholder="Create a strong password" />
                   <div className="password-strength">
                     <div className="password-strength-heading">
                       <span>Password strength</span>
-
-                      <strong
-                        className={
-                          passwordStrength === 5
-                            ? "strength-strong"
-                            : passwordStrength >= 3
-                              ? "strength-average"
-                              : "strength-weak"
-                        }
-                      >
-                        {passwordStrength === 5
-                          ? "STRONG"
-                          : passwordStrength >= 3
-                            ? "AVERAGE"
-                            : "WEAK"}
+                      <strong className={passwordStrength === 5 ? "strength-strong" : passwordStrength >= 3 ? "strength-average" : "strength-weak"}>
+                        {passwordStrength === 5 ? "STRONG" : passwordStrength >= 3 ? "AVERAGE" : "WEAK"}
                       </strong>
                     </div>
-
                     <div className="password-strength-track">
-                      <div
-                        className={`password-strength-fill ${passwordStrength === 5
-                          ? "strength-strong"
-                          : passwordStrength >= 3
-                            ? "strength-average"
-                            : "strength-weak"
-                          }`}
-                        style={{
-                          width: `${passwordStrength * 20}%`,
-                        }}
-                      />
+                      <div className={`password-strength-fill ${passwordStrength === 5 ? "strength-strong" : passwordStrength >= 3 ? "strength-average" : "strength-weak"}`} style={{ width: `${passwordStrength * 20}%` }} />
                     </div>
-
                     <ul className="password-requirements">
                       {passwordChecks.map((check) => (
-                        <li
-                          key={check.label}
-                          className={
-                            check.valid ? "requirement-valid" : ""
-                          }
-                        >
-                          <span>
-                            {check.valid ? "✓" : "○"}
-                          </span>
-                          {check.label}
+                        <li key={check.label} className={check.valid ? "requirement-valid" : ""}>
+                          <span>{check.valid ? "✓" : "○"}</span>{check.label}
                         </li>
                       ))}
                     </ul>
                   </div>
-                )}
-              </label>
+                </label>
+                <button type="submit" className="button button-primary submit-button" disabled={authBusy || !strongPassword}>
+                  {authBusy ? "SENDING OTP..." : "SEND REGISTRATION OTP →"}
+                </button>
+                <p className="privacy-note">Your account is created only after OTP verification.</p>
+              </form>
+            )}
 
-              <button
-                type="submit"
-                className="button button-primary submit-button"
-                disabled={
-                  authBusy ||
-                  (authMode === "register" && !strongPassword)
-                }
-              >
-                {authBusy
-                  ? "AUTHENTICATING..."
-                  : authMode === "login"
-                    ? "SIGN IN →"
-                    : "CREATE ACCOUNT →"}
-              </button>
+            {authMode === "register-verify" && (
+              <form className="report-form" onSubmit={handleRegistrationVerify}>
+                <h3>VERIFY REGISTRATION OTP</h3>
+                <p>Enter the code sent to {authChannel === "EMAIL" ? authForm.email : authForm.phone}.</p>
+                <label>
+                  Verification code *
+                  <input value={authOtp} onChange={(event) => setAuthOtp(event.target.value)} inputMode="numeric" autoComplete="one-time-code" maxLength={6} required placeholder="Enter OTP" />
+                </label>
+                <button type="submit" className="button button-primary submit-button" disabled={authBusy || !authOtp.trim()}>
+                  {authBusy ? "VERIFYING..." : "VERIFY & CREATE ACCOUNT →"}
+                </button>
+                <button type="button" className="button button-outline" onClick={() => { setAuthMode("register"); setAuthOtp(""); setError(""); }}>BACK</button>
+              </form>
+            )}
 
-              <p className="privacy-note">
-                Use a unique password. Your password should be
-                securely hashed by the backend before it is stored.
-              </p>
-            </form>
+            {authMode === "forgot" && (
+              <form className="report-form" onSubmit={handleForgotRequest}>
+                <h3>RESET YOUR PASSWORD</h3>
+                <p>Request a verification code using your registered email or mobile.</p>
+                <label>
+                  Verification method
+                  <select value={recovery.channel} onChange={(event) => setRecovery((prev) => ({ ...prev, channel: event.target.value, identifier: "" }))}>
+                    <option value="EMAIL">Email</option>
+                    <option value="MOBILE">Mobile</option>
+                  </select>
+                </label>
+                <label>
+                  {recovery.channel === "EMAIL" ? "Registered email *" : "Registered mobile number *"}
+                  <input type={recovery.channel === "EMAIL" ? "email" : "tel"} value={recovery.identifier} onChange={(event) => setRecovery((prev) => ({ ...prev, identifier: event.target.value }))} required autoComplete="username" placeholder={recovery.channel === "EMAIL" ? "you@example.com" : "Registered mobile number"} />
+                </label>
+                <button type="submit" className="button button-primary submit-button" disabled={recoveryBusy}>
+                  {recoveryBusy ? "SENDING OTP..." : "SEND OTP →"}
+                </button>
+                <button type="button" className="button button-outline" onClick={() => { setAuthMode("login"); setError(""); setNotice(""); }}>BACK TO SIGN IN</button>
+              </form>
+            )}
+
+            {authMode === "forgot-verify" && (
+              <form className="report-form" onSubmit={handleForgotVerify}>
+                <h3>VERIFY OTP</h3>
+                <p>Enter the verification code sent to {recovery.identifier}.</p>
+                <label>
+                  Verification code *
+                  <input value={recovery.otp} onChange={(event) => setRecovery((prev) => ({ ...prev, otp: event.target.value }))} inputMode="numeric" autoComplete="one-time-code" maxLength={6} required placeholder="Enter your OTP" />
+                </label>
+                <button type="submit" className="button button-primary submit-button" disabled={recoveryBusy || !recovery.otp.trim()}>
+                  {recoveryBusy ? "VERIFYING..." : "VERIFY OTP →"}
+                </button>
+                <button type="button" className="button button-outline" onClick={() => { setAuthMode("forgot"); setError(""); }}>BACK</button>
+              </form>
+            )}
+
+            {authMode === "reset" && (
+              <form className="report-form" onSubmit={handleForgotReset}>
+                <h3>CREATE NEW PASSWORD</h3>
+                <label>
+                  New password *
+                  <input type="password" value={recovery.newPassword} onChange={(event) => setRecovery((prev) => ({ ...prev, newPassword: event.target.value }))} minLength={8} maxLength={100} autoComplete="new-password" required placeholder="Create a strong password" />
+                </label>
+                <p className="field-help">Password must contain 8+ characters, uppercase, lowercase, a number, and a special character.</p>
+                <button type="submit" className="button button-primary submit-button" disabled={recoveryBusy || !strongRecoveryPassword}>
+                  {recoveryBusy ? "RESETTING..." : "RESET PASSWORD →"}
+                </button>
+              </form>
+            )}
           </section>
         </div>
       )}
@@ -2125,7 +2290,7 @@ export default function App() {
           >
             <div className="modal-heading">
               <div>
-                <div className="eyebrow">CREATE A REPORT</div>
+                <div className="eyebrow">NEW CASE FILE</div>
                 <h2 id="report-title">
                   {reportType === "lost"
                     ? "REPORT A LOST ITEM"
@@ -2176,7 +2341,7 @@ export default function App() {
                   setError("");
                 }}
               >
-                REPORT A FOUND ITEM
+                I FOUND SOMETHING
               </button>
             </div>
 

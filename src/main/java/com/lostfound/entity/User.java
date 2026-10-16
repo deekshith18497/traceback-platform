@@ -1,4 +1,3 @@
-
 package com.lostfound.entity;
 
 import jakarta.persistence.CascadeType;
@@ -34,7 +33,7 @@ public class User {
     @Column(nullable = false, length = 100)
     private String name;
 
-    @Column(nullable = false, unique = true, length = 150)
+    @Column(nullable = true, unique = true, length = 255)
     private String email;
 
     @Column(nullable = false)
@@ -60,17 +59,15 @@ public class User {
     private LocalDateTime updatedAt;
 
     @OneToMany(
-        mappedBy = "user",
-        cascade = CascadeType.ALL,
-        orphanRemoval = true
-    )
+            mappedBy = "user",
+            cascade = CascadeType.ALL,
+            orphanRemoval = true)
     private List<LostItem> lostItems = new ArrayList<>();
 
     @OneToMany(
-        mappedBy = "user",
-        cascade = CascadeType.ALL,
-        orphanRemoval = true
-    )
+            mappedBy = "user",
+            cascade = CascadeType.ALL,
+            orphanRemoval = true)
     private List<FoundItem> foundItems = new ArrayList<>();
 
     public User() {

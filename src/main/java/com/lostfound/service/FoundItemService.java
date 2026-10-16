@@ -30,7 +30,6 @@ public class FoundItemService {
             UserRepository userRepository,
             MatchService matchService,
             AuditLogService auditLogService) {
-
         this.foundItemRepository = foundItemRepository;
         this.categoryRepository = categoryRepository;
         this.userRepository = userRepository;
@@ -40,9 +39,8 @@ public class FoundItemService {
 
     @Transactional
     public FoundItemResponse createFoundItem(
-            String email, FoundItemRequest request) {
-
-        User user = getUser(email);
+            String identifier, FoundItemRequest request) {
+        User user = getUser(identifier);
         Category category = getActiveCategory(request.getCategoryId());
 
         String title = request.getTitle().trim();
@@ -58,7 +56,7 @@ public class FoundItemService {
                         location);
 
         if (duplicate) {
-            recordDuplicateAttempt(user.getEmail());
+            recordDuplicateAttempt(getAuditIdentifier(user));
 
             throw new IllegalArgumentException(
                     "You have already reported this found item. "
@@ -79,17 +77,16 @@ public class FoundItemService {
 
         FoundItem savedItem = foundItemRepository.save(item);
 
-        // Preserve existing automatic matching.
         matchService.findMatchesForFoundItem(savedItem.getId());
 
         return toResponse(savedItem);
     }
 
-    private void recordDuplicateAttempt(String email) {
+    private void recordDuplicateAttempt(String identifier) {
         try {
             auditLogService.recordEvent(
                     "DUPLICATE_REPORT_BLOCKED",
-                    email,
+                    identifier,
                     "Repeated active found-item report rejected",
                     null
             );
@@ -107,8 +104,8 @@ public class FoundItemService {
                 .toList();
     }
 
-    public List<FoundItemResponse> getMyFoundItems(String email) {
-        User user = getUser(email);
+    public List<FoundItemResponse> getMyFoundItems(String identifier) {
+        User user = getUser(identifier);
 
         return foundItemRepository
                 .findByUserIdOrderByCreatedAtDesc(user.getId())
@@ -123,9 +120,8 @@ public class FoundItemService {
 
     @Transactional
     public FoundItemResponse updateFoundItem(
-            String email, Long id, FoundItemRequest request) {
-
-        User user = getUser(email);
+            String identifier, Long id, FoundItemRequest request) {
+        User user = getUser(identifier);
         FoundItem item = getFoundItem(id);
 
         if (!item.getUser().getId().equals(user.getId())) {
@@ -133,7 +129,7 @@ public class FoundItemService {
                     "You can update only your own found items");
         }
 
-        if (!"FOUND".equalsIgnoreCase(item.getStatus())) {
+        if (!"ACTIVE".equalsIgnoreCase(item.getStatus())) {
             throw new IllegalArgumentException(
                     "Only active found items can be updated");
         }
@@ -153,8 +149,8 @@ public class FoundItemService {
     }
 
     @Transactional
-    public void closeFoundItem(String email, Long id) {
-        User user = getUser(email);
+    public void closeFoundItem(String identifier, Long id) {
+        User user = getUser(identifier);
         FoundItem item = getFoundItem(id);
 
         if (!item.getUser().getId().equals(user.getId())) {
@@ -166,10 +162,21 @@ public class FoundItemService {
         foundItemRepository.save(item);
     }
 
-    private User getUser(String email) {
-        return userRepository.findByEmail(email.trim().toLowerCase())
+    private User getUser(String identifier) {
+        if (identifier == null || identifier.isBlank()) {
+            throw new IllegalArgumentException("User identifier is required");
+        }
+
+        return userRepository.findByLoginIdentifier(identifier.trim())
                 .orElseThrow(() ->
                         new IllegalArgumentException("User not found"));
+    }
+
+    private String getAuditIdentifier(User user) {
+        if (user.getEmail() != null && !user.getEmail().isBlank()) {
+            return user.getEmail();
+        }
+        return user.getPhone();
     }
 
     private Category getActiveCategory(Long id) {
@@ -197,26 +204,21 @@ public class FoundItemService {
         response.setTitle(item.getTitle());
         response.setDescription(item.getDescription());
         response.setLocation(item.getLocation());
-
         response.setLatitude(
                 item.getLatitude() == null
                         ? null
                         : Math.round(item.getLatitude() * 1000.0) / 1000.0);
-
         response.setLongitude(
                 item.getLongitude() == null
                         ? null
                         : Math.round(item.getLongitude() * 1000.0) / 1000.0);
-
         response.setImageUrl(item.getImageUrl());
         response.setFoundDate(item.getFoundDate());
         response.setStatus(item.getStatus());
-
         response.setUserId(item.getUser().getId());
         response.setUserName(item.getUser().getName());
         response.setUserEmail(item.getUser().getEmail());
         response.setUserPhone(item.getUser().getPhone());
-
         response.setCategoryId(item.getCategory().getId());
         response.setCategoryName(item.getCategory().getName());
         response.setCreatedAt(item.getCreatedAt());

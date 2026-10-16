@@ -25,8 +25,9 @@ public class NotificationService {
         this.userRepository = userRepository;
     }
 
-    public List<NotificationResponse> getMyNotifications(String email) {
-        User user = getUser(email);
+    public List<NotificationResponse> getMyNotifications(
+            String identifier) {
+        User user = getUser(identifier);
 
         return notificationRepository
                 .findByUserIdOrderByCreatedAtDesc(user.getId())
@@ -35,14 +36,15 @@ public class NotificationService {
                 .toList();
     }
 
-    public long getUnreadCount(String email) {
-        User user = getUser(email);
+    public long getUnreadCount(String identifier) {
+        User user = getUser(identifier);
         return notificationRepository.countByUserIdAndReadFalse(user.getId());
     }
 
     @Transactional
-    public NotificationResponse markAsRead(String email, Long notificationId) {
-        User user = getUser(email);
+    public NotificationResponse markAsRead(
+            String identifier, Long notificationId) {
+        User user = getUser(identifier);
 
         Notification notification =
                 notificationRepository.findById(notificationId)
@@ -60,8 +62,8 @@ public class NotificationService {
     }
 
     @Transactional
-    public void markAllAsRead(String email) {
-        User user = getUser(email);
+    public void markAllAsRead(String identifier) {
+        User user = getUser(identifier);
 
         List<Notification> notifications = notificationRepository
                 .findByUserIdAndReadFalseOrderByCreatedAtDesc(user.getId());
@@ -73,7 +75,6 @@ public class NotificationService {
     @Transactional
     public NotificationResponse createNotification(
             Long userId, String title, String message, String type) {
-
         User user = userRepository.findById(userId)
                 .orElseThrow(() ->
                         new IllegalArgumentException("User not found"));
@@ -88,8 +89,12 @@ public class NotificationService {
         return toResponse(notificationRepository.save(notification));
     }
 
-    private User getUser(String email) {
-        return userRepository.findByEmail(email.trim().toLowerCase())
+    private User getUser(String identifier) {
+        if (identifier == null || identifier.isBlank()) {
+            throw new IllegalArgumentException("User identifier is required");
+        }
+
+        return userRepository.findByLoginIdentifier(identifier.trim())
                 .orElseThrow(() ->
                         new IllegalArgumentException("User not found"));
     }

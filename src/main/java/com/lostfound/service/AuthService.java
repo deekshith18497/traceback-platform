@@ -15,6 +15,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Locale;
+
 @Service
 public class AuthService {
 
@@ -41,29 +43,35 @@ public class AuthService {
         this.auditLogService = auditLogService;
     }
 
+    /**
+     * Legacy direct registration method.
+     * The public controller should continue requiring OTP
+     * verification before registration.
+     */
     @Transactional
     public AuthResponse register(RegisterRequest request) {
 
-        String email = request.getEmail().trim().toLowerCase();
-
-        // Treat missing or blank phone numbers as null.
-        String phone = request.getPhone();
-
-        if (phone != null) {
-            phone = phone.trim();
-
-            if (phone.isEmpty()) {
-                phone = null;
-            }
+        if (request == null
+                || request.getEmail() == null
+                || request.getEmail().isBlank()) {
+            throw new IllegalArgumentException(
+                    "Email is required for direct registration");
         }
 
-        if (userRepository.existsByEmail(email)) {
+        String email = request.getEmail()
+                .trim()
+                .toLowerCase(Locale.ROOT);
+
+        String phone = normalizePhoneForStorage(
+                request.getPhone());
+
+        if (userRepository.existsByEmailIgnoreCase(email)) {
             throw new IllegalArgumentException(
                     "Email is already registered");
         }
 
-        // Check duplicate phone numbers only when provided.
-        if (phone != null && userRepository.existsByPhone(phone)) {
+        if (phone != null
+                && userRepository.existsByPhone(phone)) {
             throw new IllegalArgumentException(
                     "Phone number is already registered");
         }
@@ -79,21 +87,37 @@ public class AuthService {
 
         User savedUser = userRepository.save(user);
 
-        String token =
-                jwtService.generateToken(savedUser.getEmail());
+        String token = jwtService.generateToken(
+                savedUser.getEmail());
 
         return new AuthResponse(
                 token,
                 savedUser.getId(),
                 savedUser.getName(),
                 savedUser.getEmail(),
+                savedUser.getPhone(),
                 savedUser.getRole().name()
         );
     }
 
+    /**
+     * Supports login using either email or mobile number.
+     *
+     * The authenticated principal and JWT subject must match
+     * the principal created by CustomUserDetailsService.
+     */
     public AuthResponse login(LoginRequest request) {
 
-        String identifier = request.getEmail().trim();
+        if (request == null
+                || request.getEmail() == null
+                || request.getEmail().isBlank()
+                || request.getPassword() == null) {
+            throw new IllegalArgumentException(
+                    "Email/mobile number and password are required");
+        }
+
+        String identifier = normalizeLoginIdentifier(
+                request.getEmail());
 
         // Check whether this identifier is temporarily locked.
         try {
@@ -109,20 +133,11 @@ public class AuthService {
             throw exception;
         }
 
-        User user;
+        // Repository lookup supports email and phone formats.
+        User user = userRepository
+                .findByLoginIdentifier(identifier)
+                .orElse(null);
 
-        // Support both email and mobile number login.
-        if (identifier.contains("@")) {
-            String email = identifier.toLowerCase();
-
-            user = userRepository.findByEmail(email)
-                    .orElse(null);
-        } else {
-            user = userRepository.findByPhone(identifier)
-                    .orElse(null);
-        }
-
-        // Record failed attempts for unknown accounts too.
         if (user == null) {
 
             loginAttemptService.recordFailure(identifier);
@@ -138,16 +153,27 @@ public class AuthService {
         }
 
         if (!user.isEnabled()) {
+            recordLoginEvent(
+                    "LOGIN_FAILED",
+                    identifier,
+                    "Login rejected because the account is disabled"
+            );
+
             throw new IllegalArgumentException(
                     "Account is disabled");
         }
 
-        // Authenticate using email because Spring Security
-        // uses email as the username.
+        /*
+         * Email accounts authenticate using email.
+         * Mobile-only accounts authenticate using their stored phone.
+         * This matches CustomUserDetailsService's principal selection.
+         */
+        String principal = getAuthenticationPrincipal(user);
+
         try {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(
-                            user.getEmail(),
+                            principal,
                             request.getPassword()
                     )
             );
@@ -166,7 +192,7 @@ public class AuthService {
                     "Invalid email/mobile number or password");
         }
 
-        // Reset failed attempts after successful authentication.
+        // Clear failed attempts only after successful authentication.
         loginAttemptService.reset(identifier);
 
         recordLoginEvent(
@@ -175,23 +201,98 @@ public class AuthService {
                 "User authenticated successfully"
         );
 
-        String token =
-                jwtService.generateToken(user.getEmail());
+        // JWT subject must match the principal used by the filter.
+        String token = jwtService.generateToken(principal);
 
         return new AuthResponse(
                 token,
                 user.getId(),
                 user.getName(),
                 user.getEmail(),
+                user.getPhone(),
                 user.getRole().name()
         );
     }
 
     /**
-     * Save audit events without allowing an audit-storage
-     * failure to directly interrupt authentication.
-     *
-     * Never record passwords or JWT tokens.
+     * Uses the same principal convention as CustomUserDetailsService:
+     * email when available, otherwise phone.
+     */
+    private String getAuthenticationPrincipal(User user) {
+
+        if (user.getEmail() != null
+                && !user.getEmail().isBlank()) {
+            return user.getEmail().trim()
+                    .toLowerCase(Locale.ROOT);
+        }
+
+        if (user.getPhone() != null
+                && !user.getPhone().isBlank()) {
+            return user.getPhone().trim();
+        }
+
+        throw new IllegalArgumentException(
+                "Account has no valid login identifier");
+    }
+
+    /**
+     * Normalize identifiers for login lookup and throttling.
+     * Indian mobile numbers become +91XXXXXXXXXX.
+     */
+    private String normalizeLoginIdentifier(String rawIdentifier) {
+
+        String value = rawIdentifier.trim();
+
+        if (value.contains("@")) {
+            return value.toLowerCase(Locale.ROOT);
+        }
+
+        String digits = value.replaceAll("\\D", "");
+
+        if (digits.length() == 10
+                && digits.matches("[6-9]\\d{9}")) {
+            return "+91" + digits;
+        }
+
+        if (digits.length() == 12
+                && digits.startsWith("91")
+                && digits.charAt(2) >= '6'
+                && digits.charAt(2) <= '9') {
+            return "+" + digits;
+        }
+
+        return value;
+    }
+
+    /**
+     * Normalize optional phone numbers for legacy direct registration.
+     */
+    private String normalizePhoneForStorage(String rawPhone) {
+
+        if (rawPhone == null || rawPhone.isBlank()) {
+            return null;
+        }
+
+        String value = rawPhone.trim();
+        String digits = value.replaceAll("\\D", "");
+
+        if (digits.length() == 10
+                && digits.matches("[6-9]\\d{9}")) {
+            return "+91" + digits;
+        }
+
+        if (digits.length() == 12
+                && digits.startsWith("91")
+                && digits.charAt(2) >= '6'
+                && digits.charAt(2) <= '9') {
+            return "+" + digits;
+        }
+
+        return value;
+    }
+
+    /**
+     * Record audit events without exposing passwords or JWTs.
      */
     private void recordLoginEvent(
             String eventType,

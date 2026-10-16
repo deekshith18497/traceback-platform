@@ -1,5 +1,5 @@
-
-const DEFAULT_API_BASE_URL = "https://traceback-platform.onrender.com";
+const DEFAULT_API_BASE_URL =
+  "https://traceback-platform.onrender.com";
 
 const API_BASE_URL = (
   import.meta.env.VITE_API_URL || DEFAULT_API_BASE_URL
@@ -12,14 +12,24 @@ export const API_ENDPOINTS = {
   matches: "/api/matches/my",
   confirmMatch: (id) => `/api/matches/${id}/confirm`,
   dismissMatch: (id) => `/api/matches/${id}/dismiss`,
+
+  // Legacy endpoint: direct registration is disabled by the backend.
   register: "/auth/register",
   login: "/auth/login",
+
+  // OTP registration.
+  registerRequestOtp: "/auth/register/request-otp",
+  registerVerifyOtp: "/auth/register/verify-otp",
+
+  // OTP password recovery.
+  passwordResetRequestOtp: "/auth/password/forgot/request-otp",
+  passwordResetVerifyOtp: "/auth/password/forgot/verify-otp",
+  passwordReset: "/auth/password/forgot/reset",
+
   upload: "/api/images/upload",
 
-  // Existing Watchlist API
   watchlist: "/api/watchlist",
 
-  // Existing Inbox API
   inbox: "/api/inbox/conversations",
   conversationMessages: (id) =>
     `/api/inbox/conversations/${id}/messages`,
@@ -81,22 +91,9 @@ export async function apiRequest(path, options = {}) {
         typeof data === "string"
           ? data
           : data?.message ||
-          data?.detail ||
-          data?.error ||
-          `Request failed (${response.status})`;
-
-      if (response.status === 401) {
-        throw new Error(
-          "Please sign in again to continue."
-        );
-      }
-
-      if (response.status === 403) {
-        throw new Error(
-          "You do not have permission for this action. " +
-          "Please check your account and sign in again."
-        );
-      }
+            data?.detail ||
+            data?.error ||
+            `Request failed (${response.status})`;
 
       throw new Error(message);
     }
@@ -119,6 +116,13 @@ export async function apiRequest(path, options = {}) {
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+function postJson(path, values) {
+  return apiRequest(path, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
 }
 
 // ==================== ITEMS API ====================
@@ -144,10 +148,7 @@ export function reportItem(type, item) {
     throw new Error("Unknown report type.");
   }
 
-  return apiRequest(endpoint, {
-    method: "POST",
-    body: JSON.stringify(item),
-  });
+  return postJson(endpoint, item);
 }
 
 export function uploadItemImage(file) {
@@ -166,6 +167,9 @@ export function uploadItemImage(file) {
 
 // ==================== AUTHENTICATION API ====================
 
+// Login continues to use the existing endpoint.
+// For mobile login, pass the phone number in the `email` field
+// because that is the existing LoginRequest property name.
 export function authenticate(mode, values) {
   const endpoint = API_ENDPOINTS[mode];
 
@@ -173,10 +177,38 @@ export function authenticate(mode, values) {
     throw new Error("Unsupported authentication mode.");
   }
 
-  return apiRequest(endpoint, {
-    method: "POST",
-    body: JSON.stringify(values),
-  });
+  return postJson(endpoint, values);
+}
+
+// Register: request a code before creating an account.
+export function requestRegistrationOtp(values) {
+  return postJson(API_ENDPOINTS.registerRequestOtp, values);
+}
+
+// Register: verify code and create the account.
+export function verifyRegistrationOtp(values) {
+  return postJson(API_ENDPOINTS.registerVerifyOtp, values);
+}
+
+// Forgot password: request an email or mobile OTP.
+export function requestPasswordResetOtp(values) {
+  return postJson(
+    API_ENDPOINTS.passwordResetRequestOtp,
+    values
+  );
+}
+
+// Forgot password: verify the OTP and receive a reset token.
+export function verifyPasswordResetOtp(values) {
+  return postJson(
+    API_ENDPOINTS.passwordResetVerifyOtp,
+    values
+  );
+}
+
+// Forgot password: submit the reset token and new password.
+export function resetPassword(values) {
+  return postJson(API_ENDPOINTS.passwordReset, values);
 }
 
 // ==================== MATCHES API ====================
@@ -212,12 +244,9 @@ export function saveWatchlistItem(itemType, itemId) {
     throw new Error("A valid item ID is required.");
   }
 
-  return apiRequest(API_ENDPOINTS.watchlist, {
-    method: "POST",
-    body: JSON.stringify({
-      itemType: String(itemType).toUpperCase(),
-      itemId,
-    }),
+  return postJson(API_ENDPOINTS.watchlist, {
+    itemType: String(itemType).toUpperCase(),
+    itemId,
   });
 }
 
@@ -231,7 +260,9 @@ export function removeWatchlistItem(watchlistItemId) {
   }
 
   return apiRequest(
-    `${API_ENDPOINTS.watchlist}/${encodeURIComponent(watchlistItemId)}`,
+    `${API_ENDPOINTS.watchlist}/${encodeURIComponent(
+      watchlistItemId
+    )}`,
     {
       method: "DELETE",
     }
@@ -249,13 +280,10 @@ export function startConversation(itemType, itemId, message) {
     throw new Error("Item type must be LOST or FOUND.");
   }
 
-  return apiRequest(API_ENDPOINTS.inbox, {
-    method: "POST",
-    body: JSON.stringify({
-      itemType: String(itemType).toUpperCase(),
-      itemId,
-      message,
-    }),
+  return postJson(API_ENDPOINTS.inbox, {
+    itemType: String(itemType).toUpperCase(),
+    itemId,
+    message,
   });
 }
 
@@ -272,11 +300,8 @@ export function sendInboxMessage(conversationId, content) {
     throw new Error("Please enter a message.");
   }
 
-  return apiRequest(
+  return postJson(
     API_ENDPOINTS.conversationMessages(conversationId),
-    {
-      method: "POST",
-      body: JSON.stringify({ content: message }),
-    }
+    { content: message }
   );
 }

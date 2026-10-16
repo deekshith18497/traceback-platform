@@ -1,8 +1,8 @@
-
 package com.lostfound.service;
 
 import org.springframework.stereotype.Service;
 
+import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -10,8 +10,10 @@ import java.util.concurrent.ConcurrentMap;
 public class LoginAttemptService {
 
     private static final int MAX_ATTEMPTS = 5;
-    private static final long WINDOW_MILLIS = 15 * 60 * 1000L;
-    private static final long LOCK_MILLIS = 15 * 60 * 1000L;
+    private static final long WINDOW_MILLIS =
+            15 * 60 * 1000L;
+    private static final long LOCK_MILLIS =
+            15 * 60 * 1000L;
 
     private final ConcurrentMap<String, AttemptState> attempts =
             new ConcurrentHashMap<>();
@@ -28,16 +30,17 @@ public class LoginAttemptService {
             long now = System.currentTimeMillis();
 
             if (state.lockedUntil > now) {
-                long minutesLeft =
-                        Math.max(1,
-                                (state.lockedUntil - now + 59999) / 60000);
+                long minutesLeft = Math.max(
+                        1,
+                        (state.lockedUntil - now + 59999) / 60000);
 
                 throw new IllegalArgumentException(
                         "Too many failed login attempts. Try again in "
                                 + minutesLeft + " minute(s).");
             }
 
-            if (state.lockedUntil != 0 && state.lockedUntil <= now) {
+            if (state.lockedUntil != 0
+                    && state.lockedUntil <= now) {
                 attempts.remove(key, state);
                 return;
             }
@@ -53,12 +56,14 @@ public class LoginAttemptService {
         long now = System.currentTimeMillis();
 
         AttemptState state = attempts.computeIfAbsent(
-                key, ignored -> new AttemptState(now));
+                key,
+                ignored -> new AttemptState(now));
 
         synchronized (state) {
             if (now - state.windowStartedAt >= WINDOW_MILLIS) {
                 state.windowStartedAt = now;
                 state.failures = 0;
+                state.lockedUntil = 0;
             }
 
             state.failures++;
@@ -74,12 +79,32 @@ public class LoginAttemptService {
     }
 
     private String normalize(String identifier) {
-        return identifier == null
-                ? ""
-                : identifier.trim().toLowerCase();
+        if (identifier == null || identifier.isBlank()) {
+            return "";
+        }
+
+        String value = identifier.trim();
+
+        if (value.contains("@")) {
+            return value.toLowerCase(Locale.ROOT);
+        }
+
+        String digits = value.replaceAll("[\\s()+.-]", "");
+
+        if (digits.startsWith("0091")) {
+            digits = digits.substring(4);
+        } else if (digits.startsWith("91")
+                && digits.length() == 12) {
+            digits = digits.substring(2);
+        }
+
+        return digits.matches("[0-9]{10,15}")
+                ? digits
+                : value.toLowerCase(Locale.ROOT);
     }
 
     private static class AttemptState {
+
         private long windowStartedAt;
         private int failures;
         private long lockedUntil;

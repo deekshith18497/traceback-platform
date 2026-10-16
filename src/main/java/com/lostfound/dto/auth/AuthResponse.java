@@ -1,4 +1,3 @@
-
 package com.lostfound.dto.auth;
 
 public class AuthResponse {
@@ -8,6 +7,7 @@ public class AuthResponse {
     private Long userId;
     private String name;
     private String email;
+    private String phone;
     private String role;
 
     public AuthResponse() {
@@ -20,11 +20,24 @@ public class AuthResponse {
             String name,
             String email,
             String role) {
+
+        this(token, userId, name, email, null, role);
+    }
+
+    public AuthResponse(
+            String token,
+            Long userId,
+            String name,
+            String email,
+            String phone,
+            String role) {
+
         this.token = token;
         this.tokenType = "Bearer";
         this.userId = userId;
         this.name = name;
         this.email = email;
+        this.phone = phone;
         this.role = role;
     }
 
@@ -66,6 +79,14 @@ public class AuthResponse {
 
     public void setEmail(String email) {
         this.email = email;
+    }
+
+    public String getPhone() {
+        return phone;
+    }
+
+    public void setPhone(String phone) {
+        this.phone = phone;
     }
 
     public String getRole() {

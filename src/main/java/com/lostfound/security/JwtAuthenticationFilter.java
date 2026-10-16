@@ -1,6 +1,6 @@
-
 package com.lostfound.security;
 
+import com.lostfound.entity.User;
 import com.lostfound.repository.UserRepository;
 
 import jakarta.servlet.FilterChain;
@@ -10,16 +10,18 @@ import jakarta.servlet.http.HttpServletResponse;
 
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Locale;
+import java.util.Optional;
 
 @Component
-public class JwtAuthenticationFilter extends OncePerRequestFilter {
+public class JwtAuthenticationFilter
+        extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final UserRepository userRepository;
@@ -50,46 +52,64 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String token = authorizationHeader.substring(7);
 
         try {
-            String email = jwtService.extractUsername(token);
+            String identifier = jwtService.extractUsername(token);
 
-            if (email != null
+            if (identifier != null
                     && SecurityContextHolder.getContext()
                             .getAuthentication() == null
-                    && jwtService.isTokenValid(token, email)) {
+                    && jwtService.isTokenValid(token, identifier)) {
 
-                var applicationUser = userRepository.findByEmail(email);
+                Optional<User> applicationUser =
+                        userRepository.findByLoginIdentifier(identifier);
 
-                if (applicationUser.isPresent()
-                        && applicationUser.get().isEnabled()) {
+                if (applicationUser.isPresent()) {
+                    User account = applicationUser.get();
 
-                    var databaseUser = applicationUser.get();
+                    if (account.isEnabled()) {
+                        String principal = getPrincipal(account);
 
-                    UserDetails userDetails = User.withUsername(
-                                    databaseUser.getEmail())
-                            .password(databaseUser.getPassword())
-                            .authorities("ROLE_" + databaseUser.getRole().name())
-                            .disabled(!databaseUser.isEnabled())
-                            .build();
+                        UserDetails userDetails =
+                                org.springframework.security.core.userdetails.User
+                                        .withUsername(principal)
+                                        .password(account.getPassword())
+                                        .authorities(
+                                                "ROLE_" + account.getRole().name())
+                                        .disabled(!account.isEnabled())
+                                        .build();
 
-                    var authentication =
-                            new UsernamePasswordAuthenticationToken(
-                                    userDetails,
-                                    null,
-                                    userDetails.getAuthorities());
+                        UsernamePasswordAuthenticationToken authentication =
+                                new UsernamePasswordAuthenticationToken(
+                                        userDetails,
+                                        null,
+                                        userDetails.getAuthorities());
 
-                    authentication.setDetails(
-                            new WebAuthenticationDetailsSource()
-                                    .buildDetails(request));
+                        authentication.setDetails(
+                                new WebAuthenticationDetailsSource()
+                                        .buildDetails(request));
 
-                    SecurityContextHolder.getContext()
-                            .setAuthentication(authentication);
+                        SecurityContextHolder.getContext()
+                                .setAuthentication(authentication);
+                    }
                 }
             }
+
         } catch (io.jsonwebtoken.JwtException
                  | IllegalArgumentException exception) {
+
             SecurityContextHolder.clearContext();
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private String getPrincipal(User user) {
+        if (user.getEmail() != null
+                && !user.getEmail().isBlank()) {
+            return user.getEmail()
+                    .trim()
+                    .toLowerCase(Locale.ROOT);
+        }
+
+        return user.getPhone();
     }
 }

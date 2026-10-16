@@ -21,165 +21,166 @@ import java.util.Locale;
 @Service
 public class WatchlistService {
 
-    private final WatchlistItemRepository watchlistRepository;
-    private final UserRepository userRepository;
-    private final LostItemRepository lostItemRepository;
-    private final FoundItemRepository foundItemRepository;
+        private final WatchlistItemRepository watchlistRepository;
+        private final UserRepository userRepository;
+        private final LostItemRepository lostItemRepository;
+        private final FoundItemRepository foundItemRepository;
 
-    public WatchlistService(
-            WatchlistItemRepository watchlistRepository,
-            UserRepository userRepository,
-            LostItemRepository lostItemRepository,
-            FoundItemRepository foundItemRepository) {
-
-        this.watchlistRepository = watchlistRepository;
-        this.userRepository = userRepository;
-        this.lostItemRepository = lostItemRepository;
-        this.foundItemRepository = foundItemRepository;
-    }
-
-    @Transactional
-    public WatchlistResponse saveItem(
-            String email, WatchlistRequest request) {
-
-        User user = getUser(email);
-        String itemType = normalizeItemType(request.getItemType());
-        Long itemId = request.getItemId();
-
-        // Verify that the selected item actually exists.
-        if ("LOST".equals(itemType)) {
-            if (!lostItemRepository.existsById(itemId)) {
-                throw new IllegalArgumentException(
-                        "Lost item not found");
-            }
-        } else {
-            if (!foundItemRepository.existsById(itemId)) {
-                throw new IllegalArgumentException(
-                        "Found item not found");
-            }
+        public WatchlistService(
+                        WatchlistItemRepository watchlistRepository,
+                        UserRepository userRepository,
+                        LostItemRepository lostItemRepository,
+                        FoundItemRepository foundItemRepository) {
+                this.watchlistRepository = watchlistRepository;
+                this.userRepository = userRepository;
+                this.lostItemRepository = lostItemRepository;
+                this.foundItemRepository = foundItemRepository;
         }
 
-        // Saving the same item twice returns the existing bookmark.
-        var existing = watchlistRepository
-                .findByUserIdAndItemTypeAndItemId(
-                        user.getId(), itemType, itemId);
+        @Transactional
+        public WatchlistResponse saveItem(
+                        String identifier, WatchlistRequest request) {
+                User user = getUser(identifier);
+                String itemType = normalizeItemType(request.getItemType());
+                Long itemId = request.getItemId();
 
-        if (existing.isPresent()) {
-            return toResponse(existing.get());
+                if (itemId == null) {
+                        throw new IllegalArgumentException("Item ID is required");
+                }
+
+                if ("LOST".equals(itemType)) {
+                        if (!lostItemRepository.existsById(itemId)) {
+                                throw new IllegalArgumentException("Lost item not found");
+                        }
+                } else {
+                        if (!foundItemRepository.existsById(itemId)) {
+                                throw new IllegalArgumentException("Found item not found");
+                        }
+                }
+
+                var existing = watchlistRepository
+                                .findByUserIdAndItemTypeAndItemId(
+                                                user.getId(), itemType, itemId);
+
+                if (existing.isPresent()) {
+                        return toResponse(existing.get());
+                }
+
+                WatchlistItem saved = new WatchlistItem();
+                saved.setUser(user);
+                saved.setItemType(itemType);
+                saved.setItemId(itemId);
+
+                return toResponse(watchlistRepository.save(saved));
         }
 
-        WatchlistItem saved = new WatchlistItem();
-        saved.setUser(user);
-        saved.setItemType(itemType);
-        saved.setItemId(itemId);
+        @Transactional(readOnly = true)
+        public List<WatchlistResponse> getMyWatchlist(String identifier) {
+                User user = getUser(identifier);
 
-        return toResponse(watchlistRepository.save(saved));
-    }
-
-    @Transactional(readOnly = true)
-    public List<WatchlistResponse> getMyWatchlist(String email) {
-        User user = getUser(email);
-
-        return watchlistRepository
-                .findAllByUserIdOrderBySavedAtDesc(user.getId())
-                .stream()
-                .map(this::toResponse)
-                .toList();
-    }
-
-    @Transactional
-    public void removeItem(String email, Long watchlistItemId) {
-        User user = getUser(email);
-
-        WatchlistItem saved = watchlistRepository
-                .findByIdAndUserId(watchlistItemId, user.getId())
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Saved item not found in your watchlist"));
-
-        watchlistRepository.delete(saved);
-    }
-
-    private User getUser(String email) {
-        return userRepository.findByEmail(
-                        email.trim().toLowerCase(Locale.ROOT))
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "User not found"));
-    }
-
-    private String normalizeItemType(String itemType) {
-        if (itemType == null) {
-            throw new IllegalArgumentException(
-                    "Item type must be LOST or FOUND");
+                return watchlistRepository
+                                .findAllByUserIdOrderBySavedAtDesc(user.getId())
+                                .stream()
+                                .map(this::toResponse)
+                                .toList();
         }
 
-        String normalized = itemType.trim().toUpperCase(Locale.ROOT);
+        @Transactional
+        public void removeItem(String identifier, Long watchlistItemId) {
+                User user = getUser(identifier);
 
-        if (!normalized.equals("LOST")
-                && !normalized.equals("FOUND")) {
-            throw new IllegalArgumentException(
-                    "Item type must be LOST or FOUND");
+                WatchlistItem saved = watchlistRepository
+                                .findByIdAndUserId(watchlistItemId, user.getId())
+                                .orElseThrow(() -> new IllegalArgumentException(
+                                                "Saved item not found in your watchlist"));
+
+                watchlistRepository.delete(saved);
         }
 
-        return normalized;
-    }
+        private User getUser(String identifier) {
+                if (identifier == null || identifier.isBlank()) {
+                        throw new IllegalArgumentException("User identifier is required");
+                }
 
-    private WatchlistResponse toResponse(WatchlistItem saved) {
-        if ("LOST".equals(saved.getItemType())) {
-            LostItem item = lostItemRepository
-                    .findById(saved.getItemId())
-                    .orElseThrow(() -> new IllegalArgumentException(
-                            "The saved lost item no longer exists"));
-
-            return new WatchlistResponse(
-                    saved.getId(),
-                    item.getId(),
-                    "LOST",
-                    item.getTitle(),
-                    item.getDescription(),
-                    item.getLocation(),
-                    item.getLatitude(),
-                    item.getLongitude(),
-                    item.getImageUrl(),
-                    item.getStatus(),
-                    item.getCategory() == null
-                            ? null : item.getCategory().getId(),
-                    item.getCategory() == null
-                            ? null : item.getCategory().getName(),
-                    item.getLostDate(),
-                    null,
-                    item.getCreatedAt(),
-                    saved.getSavedAt(),
-                    item.getUser().getId(),
-                    item.getUser().getName()
-            );
+                return userRepository.findByLoginIdentifier(identifier.trim())
+                                .orElseThrow(() -> new IllegalArgumentException("User not found"));
         }
 
-        FoundItem item = foundItemRepository
-                .findById(saved.getItemId())
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "The saved found item no longer exists"));
+        private String normalizeItemType(String itemType) {
+                if (itemType == null) {
+                        throw new IllegalArgumentException(
+                                        "Item type must be LOST or FOUND");
+                }
 
-        return new WatchlistResponse(
-                saved.getId(),
-                item.getId(),
-                "FOUND",
-                item.getTitle(),
-                item.getDescription(),
-                item.getLocation(),
-                item.getLatitude(),
-                item.getLongitude(),
-                item.getImageUrl(),
-                item.getStatus(),
-                item.getCategory() == null
-                        ? null : item.getCategory().getId(),
-                item.getCategory() == null
-                        ? null : item.getCategory().getName(),
-                null,
-                item.getFoundDate(),
-                item.getCreatedAt(),
-                saved.getSavedAt(),
-                item.getUser().getId(),
-                item.getUser().getName()
-        );
-    }
+                String normalized = itemType.trim().toUpperCase(Locale.ROOT);
+
+                if (!normalized.equals("LOST") && !normalized.equals("FOUND")) {
+                        throw new IllegalArgumentException(
+                                        "Item type must be LOST or FOUND");
+                }
+
+                return normalized;
+        }
+
+        private WatchlistResponse toResponse(WatchlistItem saved) {
+                if ("LOST".equals(saved.getItemType())) {
+                        LostItem item = lostItemRepository
+                                        .findById(saved.getItemId())
+                                        .orElseThrow(() -> new IllegalArgumentException(
+                                                        "The saved lost item no longer exists"));
+
+                        return new WatchlistResponse(
+                                        saved.getId(),
+                                        item.getId(),
+                                        "LOST",
+                                        item.getTitle(),
+                                        item.getDescription(),
+                                        item.getLocation(),
+                                        item.getLatitude(),
+                                        item.getLongitude(),
+                                        item.getImageUrl(),
+                                        item.getStatus(),
+                                        item.getCategory() == null
+                                                        ? null
+                                                        : item.getCategory().getId(),
+                                        item.getCategory() == null
+                                                        ? null
+                                                        : item.getCategory().getName(),
+                                        item.getLostDate(),
+                                        null,
+                                        item.getCreatedAt(),
+                                        saved.getSavedAt(),
+                                        item.getUser().getId(),
+                                        item.getUser().getName());
+                }
+
+                FoundItem item = foundItemRepository
+                                .findById(saved.getItemId())
+                                .orElseThrow(() -> new IllegalArgumentException(
+                                                "The saved found item no longer exists"));
+
+                return new WatchlistResponse(
+                                saved.getId(),
+                                item.getId(),
+                                "FOUND",
+                                item.getTitle(),
+                                item.getDescription(),
+                                item.getLocation(),
+                                item.getLatitude(),
+                                item.getLongitude(),
+                                item.getImageUrl(),
+                                item.getStatus(),
+                                item.getCategory() == null
+                                                ? null
+                                                : item.getCategory().getId(),
+                                item.getCategory() == null
+                                                ? null
+                                                : item.getCategory().getName(),
+                                null,
+                                item.getFoundDate(),
+                                item.getCreatedAt(),
+                                saved.getSavedAt(),
+                                item.getUser().getId(),
+                                item.getUser().getName());
+        }
 }

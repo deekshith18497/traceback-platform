@@ -35,7 +35,6 @@ public class LostItemService {
             UserRepository userRepository,
             MatchService matchService,
             AuditLogService auditLogService) {
-
         this.lostItemRepository = lostItemRepository;
         this.categoryRepository = categoryRepository;
         this.userRepository = userRepository;
@@ -45,9 +44,8 @@ public class LostItemService {
 
     @Transactional
     public LostItemResponse createLostItem(
-            String email, LostItemRequest request) {
-
-        User user = getUser(email);
+            String identifier, LostItemRequest request) {
+        User user = getUser(identifier);
         Category category = getActiveCategory(request.getCategoryId());
 
         String title = request.getTitle().trim();
@@ -64,7 +62,7 @@ public class LostItemService {
                                 location);
 
         if (duplicate) {
-            recordDuplicateAttempt(user.getEmail());
+            recordDuplicateAttempt(getAuditIdentifier(user));
 
             throw new IllegalArgumentException(
                     "You have already reported this lost item. "
@@ -85,17 +83,16 @@ public class LostItemService {
 
         LostItem savedItem = lostItemRepository.save(item);
 
-        // Preserve existing automatic matching.
-        matchService.findMatchesForLostItem(email, savedItem.getId());
+        matchService.findMatchesForLostItem(identifier, savedItem.getId());
 
         return toResponse(savedItem);
     }
 
-    private void recordDuplicateAttempt(String email) {
+    private void recordDuplicateAttempt(String identifier) {
         try {
             auditLogService.recordEvent(
                     "DUPLICATE_REPORT_BLOCKED",
-                    email,
+                    identifier,
                     "Repeated active lost-item report rejected",
                     null
             );
@@ -113,8 +110,8 @@ public class LostItemService {
                 .toList();
     }
 
-    public List<LostItemResponse> getMyLostItems(String email) {
-        User user = getUser(email);
+    public List<LostItemResponse> getMyLostItems(String identifier) {
+        User user = getUser(identifier);
 
         return lostItemRepository
                 .findByUserIdOrderByCreatedAtDesc(user.getId())
@@ -170,16 +167,10 @@ public class LostItemService {
                         : Sort.Direction.DESC;
 
         Pageable pageable = PageRequest.of(
-                page,
-                size,
-                Sort.by(sortDirection, sortBy));
+                page, size, Sort.by(sortDirection, sortBy));
 
         return lostItemRepository.searchLostItemsPaginated(
-                keyword,
-                categoryId,
-                location,
-                status,
-                pageable)
+                keyword, categoryId, location, status, pageable)
                 .map(this::toResponse);
     }
 
@@ -189,9 +180,8 @@ public class LostItemService {
 
     @Transactional
     public LostItemResponse updateLostItem(
-            String email, Long id, LostItemRequest request) {
-
-        User user = getUser(email);
+            String identifier, Long id, LostItemRequest request) {
+        User user = getUser(identifier);
         LostItem item = getLostItem(id);
 
         if (!item.getUser().getId().equals(user.getId())) {
@@ -219,8 +209,8 @@ public class LostItemService {
     }
 
     @Transactional
-    public void closeLostItem(String email, Long id) {
-        User user = getUser(email);
+    public void closeLostItem(String identifier, Long id) {
+        User user = getUser(identifier);
         LostItem item = getLostItem(id);
 
         if (!item.getUser().getId().equals(user.getId())) {
@@ -232,10 +222,21 @@ public class LostItemService {
         lostItemRepository.save(item);
     }
 
-    private User getUser(String email) {
-        return userRepository.findByEmail(email.trim().toLowerCase())
+    private User getUser(String identifier) {
+        if (identifier == null || identifier.isBlank()) {
+            throw new IllegalArgumentException("User identifier is required");
+        }
+
+        return userRepository.findByLoginIdentifier(identifier.trim())
                 .orElseThrow(() ->
                         new IllegalArgumentException("User not found"));
+    }
+
+    private String getAuditIdentifier(User user) {
+        if (user.getEmail() != null && !user.getEmail().isBlank()) {
+            return user.getEmail();
+        }
+        return user.getPhone();
     }
 
     private Category getActiveCategory(Long id) {
@@ -281,7 +282,6 @@ public class LostItemService {
         if (value == null || value.isBlank()) {
             return null;
         }
-
         return value.trim();
     }
 
@@ -292,26 +292,21 @@ public class LostItemService {
         response.setTitle(item.getTitle());
         response.setDescription(item.getDescription());
         response.setLocation(item.getLocation());
-
         response.setLatitude(
                 item.getLatitude() == null
                         ? null
                         : Math.round(item.getLatitude() * 1000.0) / 1000.0);
-
         response.setLongitude(
                 item.getLongitude() == null
                         ? null
                         : Math.round(item.getLongitude() * 1000.0) / 1000.0);
-
         response.setImageUrl(item.getImageUrl());
         response.setLostDate(item.getLostDate());
         response.setStatus(item.getStatus());
-
         response.setUserId(item.getUser().getId());
         response.setUserName(item.getUser().getName());
         response.setUserEmail(item.getUser().getEmail());
         response.setUserPhone(item.getUser().getPhone());
-
         response.setCategoryId(item.getCategory().getId());
         response.setCategoryName(item.getCategory().getName());
         response.setCreatedAt(item.getCreatedAt());

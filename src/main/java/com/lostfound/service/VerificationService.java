@@ -33,19 +33,19 @@ public class VerificationService {
 
     @Transactional
     public VerificationResponse submitRequest(
-            String email, VerificationRequestDto dto) {
-
-        User requester = getUser(email);
+            String identifier, VerificationRequestDto dto) {
+        User requester = getUser(identifier);
 
         Match match = matchRepository.findById(dto.getMatchId())
                 .orElseThrow(() ->
                         new IllegalArgumentException("Match not found"));
 
         boolean isLostItemOwner =
-                match.getLostItem().getUser().getId().equals(requester.getId());
-
+                match.getLostItem().getUser().getId()
+                        .equals(requester.getId());
         boolean isFoundItemOwner =
-                match.getFoundItem().getUser().getId().equals(requester.getId());
+                match.getFoundItem().getUser().getId()
+                        .equals(requester.getId());
 
         if (!isLostItemOwner && !isFoundItemOwner) {
             throw new IllegalArgumentException(
@@ -61,8 +61,8 @@ public class VerificationService {
         return toResponse(verificationRepository.save(request));
     }
 
-    public List<VerificationResponse> getMyRequests(String email) {
-        User requester = getUser(email);
+    public List<VerificationResponse> getMyRequests(String identifier) {
+        User requester = getUser(identifier);
 
         return verificationRepository
                 .findByRequesterIdOrderByCreatedAtDesc(requester.getId())
@@ -81,7 +81,6 @@ public class VerificationService {
     @Transactional
     public VerificationResponse reviewRequest(
             Long requestId, String status, String remarks) {
-
         VerificationRequest request =
                 verificationRepository.findById(requestId)
                         .orElseThrow(() ->
@@ -106,8 +105,12 @@ public class VerificationService {
         return toResponse(verificationRepository.save(request));
     }
 
-    private User getUser(String email) {
-        return userRepository.findByEmail(email.trim().toLowerCase())
+    private User getUser(String identifier) {
+        if (identifier == null || identifier.isBlank()) {
+            throw new IllegalArgumentException("User identifier is required");
+        }
+
+        return userRepository.findByLoginIdentifier(identifier.trim())
                 .orElseThrow(() ->
                         new IllegalArgumentException("User not found"));
     }

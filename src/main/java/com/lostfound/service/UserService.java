@@ -24,16 +24,14 @@ public class UserService {
         this.passwordEncoder = passwordEncoder;
     }
 
-    public UserResponse getProfile(String email) {
-        User user = getUserByEmail(email);
-        return toResponse(user);
+    public UserResponse getProfile(String identifier) {
+        return toResponse(getUser(identifier));
     }
 
     @Transactional
     public UserResponse updateProfile(
-            String email, UpdateProfileRequest request) {
-
-        User user = getUserByEmail(email);
+            String identifier, UpdateProfileRequest request) {
+        User user = getUser(identifier);
 
         user.setName(request.getName().trim());
         user.setPhone(request.getPhone());
@@ -47,13 +45,13 @@ public class UserService {
 
     @Transactional
     public void changePassword(
-            String email, ChangePasswordRequest request) {
-
-        User user = getUserByEmail(email);
+            String identifier, ChangePasswordRequest request) {
+        User user = getUser(identifier);
 
         if (!passwordEncoder.matches(
                 request.getCurrentPassword(), user.getPassword())) {
-            throw new IllegalArgumentException("Current password is incorrect");
+            throw new IllegalArgumentException(
+                    "Current password is incorrect");
         }
 
         if (passwordEncoder.matches(
@@ -66,9 +64,14 @@ public class UserService {
         userRepository.save(user);
     }
 
-    private User getUserByEmail(String email) {
-        return userRepository.findByEmail(email.trim().toLowerCase())
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+    private User getUser(String identifier) {
+        if (identifier == null || identifier.isBlank()) {
+            throw new IllegalArgumentException("User identifier is required");
+        }
+
+        return userRepository.findByLoginIdentifier(identifier.trim())
+                .orElseThrow(() ->
+                        new IllegalArgumentException("User not found"));
     }
 
     private UserResponse toResponse(User user) {
