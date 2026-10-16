@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import "./CommunityAnalytics.css";
 
 export default function CommunityAnalytics({
@@ -10,35 +10,37 @@ export default function CommunityAnalytics({
 }) {
   const [refreshing, setRefreshing] = useState(false);
 
+  const safeLostItems = Array.isArray(lostItems) ? lostItems : [];
+  const safeFoundItems = Array.isArray(foundItems) ? foundItems : [];
+  const safeAllItems = Array.isArray(allItems) ? allItems : [];
+
   const analytics = useMemo(() => {
     const categoryCounts = {};
 
-    allItems.forEach((item) => {
-      const category =
+    safeAllItems.forEach((item) => {
+      const rawCategory =
         item?._categoryName ||
         item?.category?.name ||
         item?.categoryName ||
+        (typeof item?.category === "string" ? item.category : null) ||
         "Other";
 
+      const category = String(rawCategory).trim() || "Other";
       categoryCounts[category] = (categoryCounts[category] || 0) + 1;
     });
 
     const categories = Object.entries(categoryCounts)
       .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count);
-
-    const total = allItems.length;
-    const lost = lostItems.length;
-    const found = foundItems.length;
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 
     return {
-      total,
-      lost,
-      found,
+      total: safeAllItems.length,
+      lost: safeLostItems.length,
+      found: safeFoundItems.length,
       categories: categories.slice(0, 6),
       busiestCategory: categories[0]?.name || "No reports yet",
     };
-  }, [allItems, lostItems, foundItems]);
+  }, [safeAllItems, safeLostItems, safeFoundItems]);
 
   const maxCount = Math.max(
     1,
@@ -46,7 +48,7 @@ export default function CommunityAnalytics({
   );
 
   async function handleRefresh() {
-    if (!onRefresh || refreshing) return;
+    if (typeof onRefresh !== "function" || refreshing) return;
 
     setRefreshing(true);
 
@@ -68,12 +70,10 @@ export default function CommunityAnalytics({
       <div className="ca-header">
         <div className="ca-heading">
           <span className="ca-eyebrow">COMMUNITY INSIGHTS</span>
-          <h2 id="community-analytics-title">
-            Community Analytics
-          </h2>
+          <h2 id="community-analytics-title">Community Analytics</h2>
           <p>
-            See how our community is working together to find
-            lost belongings.
+            See how our community is working together to find lost
+            belongings.
           </p>
         </div>
 
@@ -81,11 +81,10 @@ export default function CommunityAnalytics({
           type="button"
           className="ca-refresh"
           onClick={handleRefresh}
-          disabled={!onRefresh || refreshing}
+          disabled={typeof onRefresh !== "function" || refreshing}
+          aria-label={refreshing ? "Refreshing analytics" : "Refresh analytics"}
         >
-          <span aria-hidden="true">
-            {refreshing ? "⏳" : "↻"}
-          </span>
+          <span aria-hidden="true">{refreshing ? "…" : "↻"}</span>
           {refreshing ? "Refreshing..." : "Refresh"}
         </button>
       </div>
@@ -93,18 +92,18 @@ export default function CommunityAnalytics({
       <div className="ca-stats">
         <article className="ca-stat-card">
           <div className="ca-stat-icon" aria-hidden="true">
-            📋
+            <span>01</span>
           </div>
           <p className="ca-stat-label">Total Reports</p>
           <p className="ca-stat-value">{analytics.total}</p>
           <p className="ca-stat-description">
-            All available lost and found reports
+            Lost and found reports currently loaded
           </p>
         </article>
 
         <article className="ca-stat-card ca-lost-card">
           <div className="ca-stat-icon" aria-hidden="true">
-            🔎
+            <span>02</span>
           </div>
           <p className="ca-stat-label">Lost Items</p>
           <p className="ca-stat-value">{analytics.lost}</p>
@@ -115,7 +114,7 @@ export default function CommunityAnalytics({
 
         <article className="ca-stat-card ca-found-card">
           <div className="ca-stat-icon" aria-hidden="true">
-            🤝
+            <span>03</span>
           </div>
           <p className="ca-stat-label">Found Items</p>
           <p className="ca-stat-value">{analytics.found}</p>
@@ -133,15 +132,15 @@ export default function CommunityAnalytics({
           </div>
 
           <span className="ca-category-count">
-            {analytics.categories.length} categories
+            {analytics.categories.length}{" "}
+            {analytics.categories.length === 1 ? "category" : "categories"}
           </span>
         </div>
 
         {analytics.categories.length > 0 ? (
-          <div className="ca-chart" role="list">
+          <div className="ca-chart" role="list" aria-label="Reports by category">
             {analytics.categories.map((category) => {
-              const percentage =
-                (category.count / maxCount) * 100;
+              const percentage = (category.count / maxCount) * 100;
 
               return (
                 <div
@@ -173,11 +172,10 @@ export default function CommunityAnalytics({
           </div>
         ) : (
           <div className="ca-empty">
-            <span aria-hidden="true">📊</span>
+            <span aria-hidden="true">—</span>
             <h4>No report data yet</h4>
             <p>
-              Category statistics will appear when reports
-              become available.
+              Category statistics will appear when reports are available.
             </p>
           </div>
         )}
@@ -185,7 +183,7 @@ export default function CommunityAnalytics({
 
       <div className="ca-highlight">
         <span className="ca-highlight-icon" aria-hidden="true">
-          🏆
+          ★
         </span>
         <div>
           <p className="ca-highlight-label">
@@ -196,9 +194,9 @@ export default function CommunityAnalytics({
       </div>
 
       <p className="ca-footnote">
-        Statistics are calculated from the reports currently
-        loaded in HERO FIND. They do not represent confirmed
-        item recoveries.
+        Statistics are based on the reports currently loaded in TraceBack.
+        They do not represent confirmed item recoveries or necessarily all
+        reports stored in the database.
       </p>
     </section>
   );

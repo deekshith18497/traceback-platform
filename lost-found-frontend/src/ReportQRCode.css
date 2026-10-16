@@ -1,47 +1,52 @@
-
 .report-qr {
   margin-top: 16px;
+  color: var(--text-color, #e2e8f0);
 }
 
 .report-qr-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 9px;
   padding: 10px 14px;
-  border: 1px solid var(--accent-color, #ff4d4d);
+  border: 1px solid var(--accent-color, #648bff);
   border-radius: 9px;
   background: transparent;
-  color: var(--text-color, #ffffff);
+  color: var(--text-color, #e2e8f0);
   font: inherit;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 650;
   cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .report-qr-toggle:hover {
-  background: rgba(255, 77, 77, 0.1);
+  background: rgba(100, 139, 255, 0.1);
+  border-color: var(--accent-color, #648bff);
 }
 
 .report-qr-toggle:focus-visible,
-.report-qr-actions button:focus-visible {
-  outline: 2px solid var(--accent-color, #ff4d4d);
+.report-qr-actions button:focus-visible,
+.report-qr-actions a:focus-visible,
+.report-qr-link-label input:focus-visible {
+  outline: 2px solid var(--accent-color, #648bff);
   outline-offset: 3px;
 }
 
 .report-qr-panel {
   margin-top: 12px;
-  padding: 20px;
-  border: 1px solid var(--border-color, #353535);
-  border-radius: 12px;
-  background: var(--card-bg, #171717);
+  padding: 22px;
+  border: 1px solid var(--border-color, #303a4b);
+  border-radius: 14px;
+  background: var(--card-bg, #171e2a);
   text-align: center;
 }
 
 .report-qr-panel h4 {
-  margin: 0 0 16px;
-  color: var(--text-color, #ffffff);
-  font-size: 16px;
+  margin: 0 0 18px;
+  color: var(--text-color, #f1f5f9);
+  font-size: 17px;
+  font-weight: 700;
 }
 
 .report-qr-image {
@@ -49,58 +54,74 @@
   align-items: center;
   justify-content: center;
   max-width: 100%;
-  padding: 8px;
-  border-radius: 8px;
+  padding: 9px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
   background: #ffffff;
 }
 
-.report-qr-image svg {
+.report-qr-image img {
   display: block;
+  width: 250px;
   max-width: 100%;
   height: auto;
+  aspect-ratio: 1;
+  object-fit: contain;
 }
 
 .report-qr-title {
-  margin: 14px 0 5px;
-  color: var(--text-color, #ffffff);
+  margin: 15px 0 5px;
+  color: var(--text-color, #f1f5f9);
   font-weight: 700;
   overflow-wrap: anywhere;
 }
 
-.report-qr-description {
-  margin: 0;
-  color: var(--muted, #b8b8b8);
+.report-qr-description,
+.report-qr-note {
+  max-width: 480px;
+  margin: 0 auto;
+  color: var(--muted, #94a3b8);
   font-size: 12px;
+  line-height: 1.65;
 }
 
 .report-qr-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
-  margin-top: 16px;
+  gap: 9px;
+  margin-top: 18px;
 }
 
-.report-qr-actions button {
+.report-qr-actions button,
+.report-qr-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 9px 12px;
-  border: 1px solid var(--border-color, #454545);
+  border: 1px solid var(--border-color, #354155);
   border-radius: 8px;
   background: transparent;
-  color: var(--text-color, #ffffff);
+  color: var(--text-color, #e2e8f0);
   font: inherit;
   font-size: 12px;
   font-weight: 600;
+  text-decoration: none;
   cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
 }
 
-.report-qr-actions button:hover {
-  border-color: var(--accent-color, #ff4d4d);
+.report-qr-actions button:hover,
+.report-qr-actions a:hover {
+  border-color: var(--accent-color, #648bff);
+  background: rgba(100, 139, 255, 0.08);
 }
 
 .report-qr-link-label {
   display: block;
-  margin-top: 16px;
-  color: var(--muted, #b8b8b8);
+  margin-top: 18px;
+  color: var(--muted, #94a3b8);
   font-size: 12px;
   text-align: left;
 }
@@ -110,32 +131,48 @@
   box-sizing: border-box;
   width: 100%;
   margin-top: 7px;
-  padding: 10px;
-  border: 1px solid var(--border-color, #454545);
-  border-radius: 7px;
-  background: var(--card-bg, #171717);
-  color: var(--text-color, #ffffff);
+  padding: 11px 12px;
+  border: 1px solid var(--border-color, #354155);
+  border-radius: 8px;
+  background: var(--input-bg, #101722);
+  color: var(--text-color, #e2e8f0);
   font: inherit;
   font-size: 12px;
 }
 
 .report-qr-message {
-  margin: 12px 0 0;
-  color: var(--text-color, #ffffff);
+  margin: 13px 0 0;
+  color: var(--text-color, #e2e8f0);
   font-size: 12px;
+  line-height: 1.5;
   overflow-wrap: anywhere;
+}
+
+.report-qr-note {
+  margin-top: 15px;
 }
 
 @media (max-width: 480px) {
   .report-qr-panel {
-    padding: 14px;
+    padding: 15px;
   }
 
   .report-qr-actions {
     flex-direction: column;
   }
 
-  .report-qr-actions button {
+  .report-qr-actions button,
+  .report-qr-actions a {
     width: 100%;
+    box-sizing: border-box;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .report-qr-toggle,
+  .report-qr-actions button,
+  .report-qr-actions a {
+    transition: none;
   }
 }

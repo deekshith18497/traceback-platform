@@ -1,7 +1,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import "./App.css";
-
+import CommunityAnalytics from "./CommunityAnalytics.jsx";
 import {
   authenticate,
   getApiBaseUrl,
@@ -59,9 +59,9 @@ function Brand() {
     <a className="brand" href="#home">
       <span className="brand-mark">✦</span>
       <span>
-        HERO<span className="brand-red">FIND</span>
+        Trace<span className="brand-red">Back</span>
       </span>
-      <small>LOST &amp; FOUND INITIATIVE</small>
+      <small>LOST &amp; FOUND PLATFORM</small>
     </a>
   );
 }
@@ -971,8 +971,8 @@ export default function App() {
   return (
     <div className="app-shell marvel-shell" id="home">
       <div className="top-strip">
-        EARTH'S MISSING ITEMS NEED A HERO <span>•</span>{" "}
-        COMMUNITY RECOVERY NETWORK
+        A COMMUNITY THAT HELPS BRING LOST ITEMS HOME <span>•</span>{" "}
+        COMMUNITY-POWERED RECOVERY
       </div>
 
       <header className="topbar">
@@ -980,8 +980,8 @@ export default function App() {
 
 
         <nav className="nav-links">
-          <a href="#home">HQ</a>
-          <a href="#items">CASE FILES</a>
+          <a href="#home">DASHBOARD</a>
+          <a href="#items">REPORTS</a>
           <a href="#my-matches">MY MATCHES</a>
           <a href="#inbox">INBOX</a>
           <a href="#how-it-works">HOW IT WORKS</a>
@@ -992,7 +992,7 @@ export default function App() {
           {user ? (
             <>
               <span className="signed-in">
-                AGENT {user.name?.split(" ")[0]?.toUpperCase()}
+                WELCOME, {user.name?.split(" ")[0]?.toUpperCase()}
               </span>
 
               <button
@@ -1032,20 +1032,17 @@ export default function App() {
         <section className="hero marvel-hero">
           <div className="hero-copy">
             <div className="eyebrow">
-              <span className="live-dot" /> THE LOST &amp; FOUND
-              INITIATIVE
+              <span className="live-dot" /> COMMUNITY LOST &amp; FOUND PLATFORM
             </div>
 
             <h1>
-              NOT ALL HEROES
+              LOST SOMETHING?
               <br />
-              <span>WEAR CAPES.</span>
+              <span>LET’S BRING IT BACK.</span>
             </h1>
 
             <p>
-              Sometimes, a hero is the person who finds a missing
-              phone, returns a lost bag, or helps a stranger get
-              something important back.
+              Report missing belongings, discover potential matches, and reconnect items with the people who need them.
             </p>
 
             <div className="hero-actions">
@@ -1054,7 +1051,7 @@ export default function App() {
                 className="button button-primary"
                 onClick={() => openReport("lost")}
               >
-                REPORT LOST ITEM <span>→</span>
+                REPORT A LOST ITEM <span>→</span>
               </button>
 
               <button
@@ -1062,23 +1059,22 @@ export default function App() {
                 className="button button-light"
                 onClick={() => openReport("found")}
               >
-                I FOUND SOMETHING
+                REPORT A FOUND ITEM
               </button>
             </div>
 
             <div className="hero-note">
-              <span>✦</span> Every report opens a new case. Every
-              match can change a day.
+              <span>✦</span> Clear reports. Helpful matches. Real community impact.
             </div>
           </div>
 
           <div className="hero-art marvel-art" aria-hidden="true">
             <div className="hero-emblem">
-              H<span>F</span>
+              T<span>B</span>
             </div>
 
             <div className="hero-art-caption">
-              FRIENDLY NEIGHBORHOOD
+              COMMUNITY-POWERED
               <br />
               ITEM RECOVERY
             </div>
@@ -1091,8 +1087,17 @@ export default function App() {
           </div>
         </section>
 
+        <section className="community-analytics-wrap" aria-label="Community analytics">
+          <CommunityAnalytics
+            lostItems={lostItems}
+            foundItems={foundItems}
+            allItems={allItems}
+            onRefresh={loadItems}
+          />
+        </section>
+
         <section className="stats-row">
-          <div className="stat-card">
+<div className="stat-card">
             <span className="stat-icon lost-icon">⌕</span>
             <div>
               <strong>{lostItems.length}</strong>
@@ -1495,7 +1500,7 @@ export default function App() {
               className="button button-outline"
               onClick={() => openReport("found")}
             >
-              + I FOUND SOMETHING
+              + REPORT A FOUND ITEM
             </button>
           </div>
 
@@ -1813,7 +1818,7 @@ export default function App() {
         <section className="how-section" id="how-it-works">
           <div className="section-heading centered">
             <div>
-              <div className="eyebrow">THE HERO PROTOCOL</div>
+              <div className="eyebrow">A SIMPLE PROCESS</div>
               <h2>THREE STEPS. ONE GOOD DEED.</h2>
               <p>
                 Great power includes helping people find their things.
@@ -1857,7 +1862,7 @@ export default function App() {
 
       <footer className="footer">
         <Brand />
-        <p>With great community comes great responsibility.</p>
+        <p>Together, we make it easier to recover what matters.</p>
         <span>
           UNOFFICIAL FAN-INSPIRED DESIGN • NOT AFFILIATED WITH MARVEL
         </span>
@@ -1882,7 +1887,7 @@ export default function App() {
           >
             <div className="modal-heading">
               <div>
-                <div className="eyebrow">AGENT ACCESS</div>
+                <div className="eyebrow">ACCOUNT ACCESS</div>
                 <h2 id="auth-title">
                   {authMode === "login"
                     ? "WELCOME BACK, HERO"
@@ -2120,7 +2125,7 @@ export default function App() {
           >
             <div className="modal-heading">
               <div>
-                <div className="eyebrow">NEW CASE FILE</div>
+                <div className="eyebrow">CREATE A REPORT</div>
                 <h2 id="report-title">
                   {reportType === "lost"
                     ? "REPORT A LOST ITEM"
@@ -2171,7 +2176,7 @@ export default function App() {
                   setError("");
                 }}
               >
-                I FOUND SOMETHING
+                REPORT A FOUND ITEM
               </button>
             </div>
 
